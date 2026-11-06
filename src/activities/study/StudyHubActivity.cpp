@@ -3,6 +3,7 @@
 #include <Memory.h>
 
 #include "activities/ActivityManager.h"
+#include "activities/study/StudySessionActivity.h"
 #include "components/UITheme.h"
 #include "components/UiAppHelpers.h"
 
@@ -47,7 +48,18 @@ void StudyHubActivity::activateIndex(const int index) {
   if (index < 0 || index >= MODULE_COUNT) return;
   app.clearTapFlash();
   nav.selected = index;
-  auto screen = makeUniqueNoThrow<StudyPlaceholderActivity>(renderer, mappedInput, modules[index]);
+  std::unique_ptr<Activity> screen;
+  switch (modules[index]) {
+    case StudyModule::VOCAB:
+      screen = makeUniqueNoThrow<StudySessionActivity>(renderer, mappedInput, "vocab", "IELTS / TOEFL");
+      break;
+    case StudyModule::CHINESE:
+      screen = makeUniqueNoThrow<StudySessionActivity>(renderer, mappedInput, "chinese", "Chinese");
+      break;
+    default:
+      screen = makeUniqueNoThrow<StudyPlaceholderActivity>(renderer, mappedInput, modules[index]);
+      break;
+  }
   if (!screen) {
     LOG_ERR("STUDY", "OOM: study module screen");
     return;

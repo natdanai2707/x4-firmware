@@ -55,13 +55,36 @@ Before the first flash: back up the stock firmware with
 ## Roadmap
 
 1. [x] Fork + X4 Pro simulator build
-2. [ ] Custom Home screen (Compound, Books, IELTS, Chinese)
-3. [ ] SRS engine shared by IELTS/TOEFL vocab and Chinese flashcards
-4. [ ] Compound morning sync over WiFi
-5. [ ] Thai rendering (vowel/tone stacking, word breaking)
+2. [x] Study hub on Home (Compound, IELTS/TOEFL, Chinese)
+3. [x] SRS engine shared by IELTS/TOEFL vocab and Chinese flashcards
+4. [ ] CJK font on SD so hanzi render (pinyin and meaning already show)
+5. [ ] Compound morning sync over WiFi
+6. [ ] Thai rendering (vowel/tone stacking, word breaking)
+
+## Study decks
+
+Copy decks to the SD card under `/study/`. Starters live in `data/study/`.
+
+| File | Deck |
+|---|---|
+| `/study/vocab.tsv` | IELTS / TOEFL |
+| `/study/chinese.tsv` | Chinese |
+
+One card per line, fields separated by TAB. Field 1 is the front; the rest
+show on the back (meaning, then example, then Thai). Lines starting with `#`
+are comments. Add new cards at the end only: progress in `/study/<deck>.srs`
+is matched by card order.
+
+Each session: due reviews first (max 100), then up to 10 new cards per day.
+Grades: Again (see it again this session), Good, Easy. Progress saves after
+every answer. Thai fields are hidden until Thai rendering is done.
+
+Scheduler tests: `cmake -S test -B build/test && cmake --build build/test --target SrsSchedulerTest && build/test/srs_scheduler/SrsSchedulerTest`
 
 ## Local changes vs upstream
 
+- `src/study/`, `src/activities/study/`: Study hub, SRS scheduler, deck store, session screen.
+- `src/activities/home/HomeActivity.*`: Study entry first on the list home.
 - `platformio.ini`: added `simulator`, `simulator_x4_pro`, `simulator_x4_pro_mac` envs;
   libraries pulled from GitHub instead of the PlatformIO registry.
 - `tools/crosspoint-simulator/src/HalDisplay.h`, `HalStorage.h`: stubbed
