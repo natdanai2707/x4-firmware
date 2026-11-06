@@ -18,7 +18,15 @@
 class Activity;    // forward declaration
 class RenderLock;  // forward declaration
 
-enum class HomeMenuItem { NONE, FILE_BROWSER, LIBRARY, OPDS_BROWSER, FILE_TRANSFER, SETTINGS_MENU };
+enum class HomeMenuItem {
+  NONE,
+  FILE_BROWSER,
+  LIBRARY,
+  OPDS_BROWSER,
+  FILE_TRANSFER,
+  SETTINGS_MENU,
+  STUDY  // x4-firmware: Study hub, first entry on the classic home
+};
 
 /**
  * ActivityManager

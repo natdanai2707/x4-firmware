@@ -38,9 +38,18 @@ class HomeActivity final : public Activity {
   const HomeMenuItem initialMenuItem;
   const bool cleanInitialRefresh;
 
+  // The Study entry leads the classic list home. The cover grid home has
+  // fixed tab slots, so it does not show it.
+  static constexpr HomeMenuItem STUDY_ITEMS[] = {HomeMenuItem::STUDY};
+  static constexpr int STUDY_ITEM_COUNT = 1;
+  int studyItemCount() const { return coverGridUi ? 0 : STUDY_ITEM_COUNT; }
+
   // Convert HomeMenuItem to menu index (used in onEnter)
-  static int menuItemToIndex(HomeMenuItem item, bool hasOpdsUrl) {
-    int i = 0;
+  static int menuItemToIndex(HomeMenuItem item, bool hasOpdsUrl, int studyCount) {
+    for (int s = 0; s < studyCount; ++s) {
+      if (item == STUDY_ITEMS[s]) return s;
+    }
+    int i = studyCount;
     if (item == HomeMenuItem::FILE_BROWSER) return i;
     ++i;
     if (item == HomeMenuItem::LIBRARY) return i;
@@ -54,8 +63,9 @@ class HomeActivity final : public Activity {
   }
 
   // Convert menu index to HomeMenuItem (used in loop)
-  static HomeMenuItem indexToMenuItem(int idx, bool hasOpdsUrl) {
-    int i = 0;
+  static HomeMenuItem indexToMenuItem(int idx, bool hasOpdsUrl, int studyCount) {
+    if (idx >= 0 && idx < studyCount) return STUDY_ITEMS[idx];
+    int i = studyCount;
     if (idx == i++) return HomeMenuItem::FILE_BROWSER;
     if (idx == i++) return HomeMenuItem::LIBRARY;
     if (hasOpdsUrl && idx == i++) return HomeMenuItem::OPDS_BROWSER;
@@ -70,6 +80,7 @@ class HomeActivity final : public Activity {
   void onFileTransferOpen();
   void onOpdsBrowserOpen();
   void onPluginsOpen();
+  void onStudyOpen();
 
   int getMenuItemCount() const;
   bool storeCoverBuffer();    // Store frame buffer for cover image

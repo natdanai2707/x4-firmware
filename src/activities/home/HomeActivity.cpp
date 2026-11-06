@@ -23,11 +23,12 @@
 #include "MappedInputManager.h"
 #include "OpdsServerStore.h"
 #include "RecentBooksStore.h"
+#include "activities/study/StudyHubActivity.h"
 #include "components/UITheme.h"
 #include "fontIds.h"
 
 int HomeActivity::getMenuItemCount() const {
-  int count = 4;  // File Browser, Library, File transfer, Settings
+  int count = 4 + studyItemCount();  // Study entries, File Browser, Library, File transfer, Settings
   if (!recentBooks.empty()) {
     count += recentBooks.size();
   }
@@ -250,7 +251,7 @@ void HomeActivity::onEnter() {
   }
 
   const auto base = static_cast<int>(recentBooks.size());
-  selectorIndex = initialMenuItem == HomeMenuItem::NONE ? 0 : base + menuItemToIndex(initialMenuItem, hasLibrarySlot());
+  selectorIndex = initialMenuItem == HomeMenuItem::NONE ? 0 : base + menuItemToIndex(initialMenuItem, hasLibrarySlot(), studyItemCount());
 
   // Trigger first update
   requestUpdate();
@@ -311,7 +312,11 @@ void HomeActivity::loop() {
       return;
     }
     const int menuIndex = selectorIndex - static_cast<int>(recentBooks.size());
-    switch (indexToMenuItem(menuIndex, hasLibrarySlot())) {
+    const HomeMenuItem item = indexToMenuItem(menuIndex, hasLibrarySlot(), studyItemCount());
+    switch (item) {
+      case HomeMenuItem::STUDY:
+        onStudyOpen();
+        break;
       case HomeMenuItem::FILE_BROWSER:
         onFileBrowserOpen();
         break;
@@ -533,6 +538,11 @@ void HomeActivity::render(RenderLock&&) {
     menuIcons.insert(menuIcons.begin() + 2, Plugins);
   }
 
+  if (studyItemCount() > 0) {
+    menuItems.insert(menuItems.begin(), "Study");
+    menuIcons.insert(menuIcons.begin(), Bookmark);
+  }
+
   if (metrics.homeContinueReadingInMenu && !recentBooks.empty()) {
     // Insert Continue Reading at the top if enabled in theme
     menuItems.insert(menuItems.begin(), tr(STR_CONTINUE_READING));
@@ -578,3 +588,12 @@ void HomeActivity::onFileTransferOpen() { activityManager.goToFileTransfer(); }
 void HomeActivity::onOpdsBrowserOpen() { activityManager.goToBrowser(); }
 
 void HomeActivity::onPluginsOpen() { activityManager.goToPlugins(hasOpdsServers); }
+
+void HomeActivity::onStudyOpen() {
+  auto activity = makeUniqueNoThrow<StudyHubActivity>(renderer, mappedInput);
+  if (!activity) {
+    LOG_ERR("HOME", "OOM: study activity");
+    return;
+  }
+  activityManager.replaceActivity(std::move(activity));
+}
