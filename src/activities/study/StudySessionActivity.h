@@ -6,6 +6,7 @@
 
 #include "activities/Activity.h"
 #include "study/StudyDeck.h"
+#include "study/StudyFont.h"
 
 // One review session over a StudyDeck: due cards, then new cards. Front, tap
 // to show the back, then grade Again / Good / Easy. Progress is saved after
@@ -29,6 +30,8 @@ class StudySessionActivity final : public Activity {
   void renderBack(int top, int width);
   void renderMessage(int top, int width, const char* title, const std::string& body);
   std::string nextDueText() const;
+  // Font for a card field: the study font when the text needs it, else built-in.
+  int fontFor(const std::string& text, bool front) const;
 
   std::unique_ptr<StudyDeck> deck;
   const std::string title;
@@ -39,4 +42,6 @@ class StudySessionActivity final : public Activity {
   size_t plannedCount = 0;  // size of the plan before any Again
   uint16_t reviewed = 0;
   std::vector<std::string> fields;
+  std::unique_ptr<StudyFont> font;  // loaded on the first card that needs it
+  bool fontTried = false;
 };

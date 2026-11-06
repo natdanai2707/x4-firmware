@@ -57,7 +57,7 @@ Before the first flash: back up the stock firmware with
 1. [x] Fork + X4 Pro simulator build
 2. [x] Study hub on Home (Compound, IELTS/TOEFL, Chinese)
 3. [x] SRS engine shared by IELTS/TOEFL vocab and Chinese flashcards
-4. [ ] CJK font on SD so hanzi render (pinyin and meaning already show)
+4. [x] Chinese font for study cards (`/study/font.ttf`)
 5. [ ] Compound morning sync over WiFi
 6. [ ] Thai rendering (vowel/tone stacking, word breaking)
 
@@ -69,6 +69,7 @@ Copy decks to the SD card under `/study/`. Starters live in `data/study/`.
 |---|---|
 | `/study/vocab.tsv` | IELTS / TOEFL |
 | `/study/chinese.tsv` | Chinese |
+| `/study/font.ttf` | Chinese font for cards (copy `data/study/font.ttf`) |
 
 One card per line, fields separated by TAB. Field 1 is the front; the rest
 show on the back (meaning, then example, then Thai). Lines starting with `#`
@@ -79,11 +80,18 @@ Each session: due reviews first (max 100), then up to 10 new cards per day.
 Grades: Again (see it again this session), Good, Easy. Progress saves after
 every answer. Thai fields are hidden until Thai rendering is done.
 
+Chinese text on cards uses `/study/font.ttf`, separate from the reader font,
+so English books keep their font. The included file is Noto Sans CJK SC cut
+down to the 3,755 most common characters (covers HSK 1-6), about 1.1 MB.
+Rebuild it with more characters, or for a new deck:
+`python3 tools/study/make_study_font.py NotoSansCJK-Regular.ttc data/study/font.ttf data/study/chinese.tsv`.
+It must be TrueType outlines: the firmware font engine has no CFF (.otf) driver.
+
 Scheduler tests: `cmake -S test -B build/test && cmake --build build/test --target SrsSchedulerTest && build/test/srs_scheduler/SrsSchedulerTest`
 
 ## Local changes vs upstream
 
-- `src/study/`, `src/activities/study/`: Study hub, SRS scheduler, deck store, session screen.
+- `src/study/`, `src/activities/study/`: Study hub, SRS scheduler, deck store, study font, session screen.
 - `src/activities/home/HomeActivity.*`: Study entry first on the list home.
 - `platformio.ini`: added `simulator`, `simulator_x4_pro`, `simulator_x4_pro_mac` envs;
   libraries pulled from GitHub instead of the PlatformIO registry.

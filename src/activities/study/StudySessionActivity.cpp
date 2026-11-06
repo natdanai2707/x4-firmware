@@ -63,6 +63,7 @@ void StudySessionActivity::onEnter() {
 
 void StudySessionActivity::onExit() {
   Activity::onExit();
+  font.reset();
   deck.reset();
   queue.clear();
   queue.shrink_to_fit();
@@ -72,9 +73,20 @@ void StudySessionActivity::loadCurrentCard() {
   if (!deck->readCard(queue[position], fields)) {
     fields.assign(1, "(card unreadable)");
   }
+  if (!fontTried && std::any_of(fields.begin(), fields.end(), StudyFont::needsFont)) {
+    fontTried = true;
+    font = makeUniqueNoThrow<StudyFont>(renderer);
+    if (font && !font->load()) font.reset();
+  }
+}
+
+int StudySessionActivity::fontFor(const std::string& text, const bool front) const {
+  if (font && StudyFont::needsFont(text)) return front ? font->frontFontId() : font->bodyFontId();
+  return front ? NOTOSANS_18_FONT_ID : UI_12_FONT_ID;
 }
 
 void StudySessionActivity::answer(const srs::Grade grade) {
+  RenderLock lock;  // the render task reads fields and phase
   const uint16_t index = queue[position];
   auto& state = deck->states()[index];
   const bool wasNew = srs::isNew(state);
@@ -116,7 +128,10 @@ void StudySessionActivity::loop() {
   switch (phase) {
     case Phase::Front:
       if (tapped || mappedInput.wasReleased(MappedInputManager::Button::Confirm)) {
-        phase = Phase::Back;
+        {
+          RenderLock lock;
+          phase = Phase::Back;
+        }
         requestUpdate();
       }
       break;
@@ -208,27 +223,32 @@ void StudySessionActivity::render(RenderLock&&) {
 }
 
 void StudySessionActivity::renderFront(const int top, const int width) {
-  const int frontHeight = renderer.getLineHeight(NOTOSANS_18_FONT_ID);
-  const auto lines = renderer.wrappedText(NOTOSANS_18_FONT_ID, fields[0].c_str(), width, 4);
-  int y = top + (renderer.getScreenHeight() / 2 - top) - static_cast<int>(lines.size()) * frontHeight / 2;
+  const int fontId = fontFor(fields[0], true);
+  // Built-in fonts look best bold; the study font has one regular face.
+  const auto style = fontId == NOTOSANS_18_FONT_ID ? EpdFontFamily::BOLD : EpdFontFamily::REGULAR;
+  const int lineHeight = renderer.getLineHeight(fontId);
+  const auto lines = renderer.wrappedText(fontId, fields[0].c_str(), width, 4);
+  int y = top + (renderer.getScreenHeight() / 2 - top) - static_cast<int>(lines.size()) * lineHeight / 2;
   for (const auto& line : lines) {
-    renderer.drawCenteredText(NOTOSANS_18_FONT_ID, y, line.c_str(), true, EpdFontFamily::BOLD);
-    y += frontHeight;
+    renderer.drawCenteredText(fontId, y, line.c_str(), true, style);
+    y += lineHeight;
   }
-  y += frontHeight;
+  y += renderer.getLineHeight(NOTOSANS_18_FONT_ID);
   renderer.drawCenteredText(SMALL_FONT_ID, y, "Tap to show answer");
 }
 
 void StudySessionActivity::renderBack(const int top, const int width) {
   const auto& metrics = UITheme::getInstance().getMetrics();
   const int x = metrics.contentSidePadding;
-  const int frontHeight = renderer.getLineHeight(NOTOSANS_18_FONT_ID);
   const int bodyHeight = renderer.getLineHeight(UI_12_FONT_ID);
   const int zoneTop = renderer.getScreenHeight() - metrics.buttonHintsHeight - ANSWER_ZONE_GAP - ANSWER_ZONE_HEIGHT;
 
   int y = top;
-  for (const auto& line : renderer.wrappedText(NOTOSANS_18_FONT_ID, fields[0].c_str(), width, 2)) {
-    renderer.drawText(NOTOSANS_18_FONT_ID, x, y, line.c_str(), true, EpdFontFamily::BOLD);
+  const int frontId = fontFor(fields[0], true);
+  const auto frontStyle = frontId == NOTOSANS_18_FONT_ID ? EpdFontFamily::BOLD : EpdFontFamily::REGULAR;
+  const int frontHeight = renderer.getLineHeight(frontId);
+  for (const auto& line : renderer.wrappedText(frontId, fields[0].c_str(), width, 2)) {
+    renderer.drawText(frontId, x, y, line.c_str(), true, frontStyle);
     y += frontHeight;
   }
   y += metrics.verticalSpacing;
@@ -237,12 +257,14 @@ void StudySessionActivity::renderBack(const int top, const int width) {
 
   for (size_t f = 1; f < fields.size(); ++f) {
     if (hasThai(fields[f])) continue;
-    // Field 2 (meaning) regular; later fields (examples, translations) italic.
-    const auto style = f == 1 ? EpdFontFamily::REGULAR : EpdFontFamily::ITALIC;
-    for (const auto& line : renderer.wrappedText(UI_12_FONT_ID, fields[f].c_str(), width, 6)) {
-      if (y + bodyHeight > zoneTop - metrics.verticalSpacing) break;
-      renderer.drawText(UI_12_FONT_ID, x, y, line.c_str(), true, style);
-      y += bodyHeight;
+    const int fontId = fontFor(fields[f], false);
+    const int lineHeight = renderer.getLineHeight(fontId);
+    // Meaning regular; later fields (examples) italic where the font has it.
+    const auto style = f == 1 || fontId != UI_12_FONT_ID ? EpdFontFamily::REGULAR : EpdFontFamily::ITALIC;
+    for (const auto& line : renderer.wrappedText(fontId, fields[f].c_str(), width, 6)) {
+      if (y + lineHeight > zoneTop - metrics.verticalSpacing) break;
+      renderer.drawText(fontId, x, y, line.c_str(), true, style);
+      y += lineHeight;
     }
     y += metrics.verticalSpacing * 2;
   }
