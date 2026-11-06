@@ -22,7 +22,7 @@ const char* StudyPlaceholderActivity::titleFor(const StudyModule module) {
 const char* StudyPlaceholderActivity::summaryFor(const StudyModule module) {
   switch (module) {
     case StudyModule::COMPOUND:
-      return "Morning brief: Markets, Ideas, Words. Synced each morning.";
+      return "Morning market brief and idea case studies, synced over WiFi.";
     case StudyModule::VOCAB:
       return "Daily words with examples and Thai meaning.";
     case StudyModule::CHINESE:

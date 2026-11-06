@@ -1,0 +1,214 @@
+#!/usr/bin/env python3
+"""Turn one Compound brief (JSON from the Compound app) into an EPUB for the
+X4 Pro, and update the feed index the device syncs from.
+
+Usage: compound_epub.py <brief.json> <doc_id> <feed_dir> [--thai] [--keep N]
+
+Writes <feed_dir>/<doc_id>.epub and rewrites <feed_dir>/index.txt, one line
+per brief, newest first:  <doc_id>.epub <TAB> <type> <TAB> <date> <TAB> <title>
+Only the newest N briefs (default 30) are kept; older EPUBs are deleted.
+Thai translation fields are left out unless --thai is given (the device font
+has no Thai glyphs yet).
+"""
+import html
+import json
+import os
+import sys
+import uuid
+import zipfile
+from datetime import datetime, timezone
+
+INDEX = "index.txt"
+
+
+def esc(text):
+    return html.escape(str(text or ""), quote=True)
+
+
+def para(text, cls=None):
+    if not text:
+        return ""
+    attr = f' class="{cls}"' if cls else ""
+    return f"<p{attr}>{esc(text)}</p>\n"
+
+
+def body_for(b, thai):
+    is_news = b.get("type") == "news"
+    out = []
+    eyebrow = "Morning market brief" if is_news else (b.get("category") or "Idea")
+    out.append(f'<p class="eyebrow">{esc(eyebrow)} · {esc(b.get("date", ""))}</p>\n')
+    out.append(f"<h1>{esc(b.get('title_en'))}</h1>\n")
+    if thai:
+        out.append(para(b.get("title_th"), "th"))
+    if b.get("hook_en"):
+        out.append(para(b["hook_en"], "dek"))
+
+    core = b.get("core_idea") or {}
+    if core.get("en"):
+        out.append('<div class="core"><p class="label">Core idea</p>\n')
+        out.append(para(core["en"]))
+        if thai:
+            out.append(para(core.get("th"), "th"))
+        out.append("</div>\n")
+
+    snap = b.get("snapshot") or []
+    if snap:
+        out.append("<h2>Snapshot</h2>\n<table>\n")
+        for s in snap:
+            out.append(f"<tr><td>{esc(s.get('label'))}</td><td>{esc(s.get('value'))}</td>"
+                       f"<td>{esc(s.get('change'))}</td></tr>\n")
+        out.append("</table>\n")
+        out.append(para(b.get("snapshot_note"), "note"))
+
+    for i, s in enumerate(b.get("sections") or []):
+        label = s.get("framework")
+        if label:
+            out.append(f'<p class="eyebrow">{esc(label)}</p>\n')
+        out.append(f"<h2>{esc(s.get('headline_en'))}</h2>\n")
+        if thai:
+            out.append(para(s.get("headline_th"), "th"))
+        out.append(para(s.get("en")))
+        if thai:
+            out.append(para(s.get("th"), "th"))
+        if s.get("impact_en"):
+            out.append(f'<p class="impact"><b>Why it matters:</b> {esc(s["impact_en"])}</p>\n')
+            if thai:
+                out.append(para(s.get("impact_th"), "th"))
+
+    terms = b.get("terms") or []
+    if terms:
+        out.append("<h2>Key terms</h2>\n")
+        for t in terms:
+            th = f" ({esc(t.get('th'))})" if thai and t.get("th") else ""
+            out.append(f'<p class="term"><b>{esc(t.get("en"))}</b>{th}: {esc(t.get("explain_en") or t.get("explain"))}</p>\n')
+            if t.get("example_en"):
+                out.append(para(t["example_en"], "example"))
+
+    if b.get("followups"):
+        out.append("<h2>Think about it</h2>\n")
+        for q in b["followups"]:
+            out.append(para(q))
+
+    if b.get("sources"):
+        out.append("<h2>Sources</h2>\n")
+        for s in b["sources"]:
+            out.append(para(s.get("title") if isinstance(s, dict) else s, "source"))
+    return "".join(out)
+
+
+CSS = """body{margin:0 4%;line-height:1.45}
+h1{font-size:1.5em;margin:.2em 0 .4em}
+h2{font-size:1.15em;margin:1.2em 0 .3em}
+.eyebrow{font-size:.75em;text-transform:uppercase;letter-spacing:.06em;margin:1.2em 0 0}
+.dek{font-style:italic}
+.core{border-left:3px solid #000;padding-left:.8em;margin:1em 0}
+.core p,.term,.example{text-align:left}
+.label{font-weight:bold;font-size:.8em;text-transform:uppercase;margin:0}
+.impact{font-size:.95em}
+.example{font-style:italic;font-size:.9em;margin-top:0}
+.note,.source{font-size:.8em}
+table{border-collapse:collapse;width:100%;font-size:.9em}
+td{padding:.15em .3em;border-bottom:1px solid #999}
+"""
+
+
+def build_epub(b, doc_id, path, thai):
+    title = b.get("title_en") or doc_id
+    book_id = "urn:uuid:" + str(uuid.uuid5(uuid.NAMESPACE_URL, "compound/" + doc_id))
+    modified = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    xhtml = ('<?xml version="1.0" encoding="utf-8"?>\n<!DOCTYPE html>\n'
+             '<html xmlns="http://www.w3.org/1999/xhtml" xml:lang="en" lang="en"><head>'
+             f'<title>{esc(title)}</title><link rel="stylesheet" type="text/css" href="style.css"/></head>'
+             f"<body>\n{body_for(b, thai)}</body></html>\n")
+    opf = f"""<?xml version="1.0" encoding="utf-8"?>
+<package xmlns="http://www.idpf.org/2007/opf" version="3.0" unique-identifier="id">
+<metadata xmlns:dc="http://purl.org/dc/elements/1.1/">
+<dc:identifier id="id">{book_id}</dc:identifier>
+<dc:title>{esc(title)}</dc:title>
+<dc:creator>Compound</dc:creator>
+<dc:language>en</dc:language>
+<dc:date>{esc(b.get('date', ''))}</dc:date>
+<meta property="dcterms:modified">{modified}</meta>
+</metadata>
+<manifest>
+<item id="nav" href="nav.xhtml" media-type="application/xhtml+xml" properties="nav"/>
+<item id="ncx" href="toc.ncx" media-type="application/x-dtbncx+xml"/>
+<item id="css" href="style.css" media-type="text/css"/>
+<item id="brief" href="brief.xhtml" media-type="application/xhtml+xml"/>
+</manifest>
+<spine toc="ncx"><itemref idref="brief"/></spine>
+</package>
+"""
+    nav = ('<?xml version="1.0" encoding="utf-8"?>\n<!DOCTYPE html>\n'
+           '<html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops"><head><title>Contents</title></head>'
+           f'<body><nav epub:type="toc"><ol><li><a href="brief.xhtml">{esc(title)}</a></li></ol></nav></body></html>\n')
+    ncx = f"""<?xml version="1.0" encoding="utf-8"?>
+<ncx xmlns="http://www.daisy.org/z3986/2005/ncx/" version="2005-1">
+<head><meta name="dtb:uid" content="{book_id}"/></head>
+<docTitle><text>{esc(title)}</text></docTitle>
+<navMap><navPoint id="p1" playOrder="1"><navLabel><text>{esc(title)}</text></navLabel><content src="brief.xhtml"/></navPoint></navMap>
+</ncx>
+"""
+    container = ('<?xml version="1.0" encoding="utf-8"?>\n'
+                 '<container version="1.0" xmlns="urn:oasis:names:tc:opendocument:xmlns:container">'
+                 '<rootfiles><rootfile full-path="OEBPS/content.opf" media-type="application/oebps-package+xml"/>'
+                 "</rootfiles></container>\n")
+    tmp = path + ".tmp"
+    with zipfile.ZipFile(tmp, "w") as z:
+        z.writestr(zipfile.ZipInfo("mimetype"), "application/epub+zip", compress_type=zipfile.ZIP_STORED)
+        for name, data in [("META-INF/container.xml", container), ("OEBPS/content.opf", opf),
+                           ("OEBPS/nav.xhtml", nav), ("OEBPS/toc.ncx", ncx), ("OEBPS/style.css", CSS),
+                           ("OEBPS/brief.xhtml", xhtml)]:
+            z.writestr(name, data, compress_type=zipfile.ZIP_DEFLATED)
+    os.replace(tmp, path)
+
+
+def read_index(feed_dir):
+    rows = []
+    p = os.path.join(feed_dir, INDEX)
+    if os.path.exists(p):
+        with open(p, encoding="utf-8") as f:
+            for line in f:
+                parts = line.rstrip("\n").split("\t")
+                if len(parts) >= 4 and not line.startswith("#"):
+                    rows.append(parts[:5] + [""] * (5 - len(parts[:5])))
+    return rows
+
+
+def main():
+    args = [a for a in sys.argv[1:] if not a.startswith("--")]
+    thai = "--thai" in sys.argv
+    keep = 30
+    if "--keep" in sys.argv:
+        keep = int(sys.argv[sys.argv.index("--keep") + 1])
+        args = [a for a in args if a != str(keep)]
+    if len(args) != 3:
+        sys.exit(__doc__)
+    src, doc_id, feed_dir = args
+    with open(src, encoding="utf-8") as f:
+        b = json.load(f)
+    if "data" in b and isinstance(b["data"], dict) and "title_en" in b["data"]:
+        b = b["data"]
+    os.makedirs(feed_dir, exist_ok=True)
+    epub_name = doc_id + ".epub"
+    build_epub(b, doc_id, os.path.join(feed_dir, epub_name), thai)
+
+    title = " ".join(str(b.get("title_en") or doc_id).split())
+    row = [epub_name, b.get("type", ""), b.get("date", ""), title, b.get("created_at", "")]
+    rows = [r for r in read_index(feed_dir) if r[0] != epub_name] + [row]
+    rows.sort(key=lambda r: (r[4] or r[2]), reverse=True)
+    kept, dropped = rows[:keep], rows[keep:]
+    for r in dropped:
+        try:
+            os.remove(os.path.join(feed_dir, r[0]))
+        except FileNotFoundError:
+            pass
+    with open(os.path.join(feed_dir, INDEX), "w", encoding="utf-8") as f:
+        f.write("# Compound feed: file, type, date, title, created_at (newest first)\n")
+        for r in kept:
+            f.write("\t".join(r) + "\n")
+    print(f"{epub_name}: written; index has {len(kept)} briefs, removed {len(dropped)}")
+
+
+if __name__ == "__main__":
+    main()

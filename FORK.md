@@ -58,7 +58,7 @@ Before the first flash: back up the stock firmware with
 2. [x] Study hub on Home (Compound, IELTS/TOEFL, Chinese)
 3. [x] SRS engine shared by IELTS/TOEFL vocab and Chinese flashcards
 4. [x] Chinese font for study cards (`/study/font.ttf`)
-5. [ ] Compound morning sync over WiFi
+5. [x] Compound briefs synced over WiFi (feed setup below)
 6. [ ] Thai rendering (vowel/tone stacking, word breaking)
 
 ## Study decks
@@ -89,9 +89,25 @@ It must be TrueType outlines: the firmware font engine has no CFF (.otf) driver.
 
 Scheduler tests: `cmake -S test -B build/test && cmake --build build/test --target SrsSchedulerTest && build/test/srs_scheduler/SrsSchedulerTest`
 
+## Compound feed
+
+Study > Compound > Sync now joins WiFi, downloads `index.txt` and any new
+briefs from the feed into `/compound/`, and removes briefs that left the feed.
+Tap a brief to read it in the normal EPUB reader (dictionary, bookmarks).
+
+Device setup: `/compound/feed.txt`
+
+    url=https://raw.githubusercontent.com/natdanai2707/compound-feed/main/feed/
+    token=<GitHub token with read access, only for a private repo>
+
+Publishing: each Compound scheduled task runs
+`tools/compound/compound_epub.py <brief.json> <doc_id> feed/` in the feed
+repo and pushes. The feed keeps the newest 30 briefs. Thai translations are
+left out until Thai rendering works (`--thai` adds them).
+
 ## Local changes vs upstream
 
-- `src/study/`, `src/activities/study/`: Study hub, SRS scheduler, deck store, study font, session screen.
+- `src/study/`, `src/activities/study/`: Study hub, SRS scheduler, deck store, study font, session screen, Compound sync.
 - `src/activities/home/HomeActivity.*`: Study entry first on the list home.
 - `platformio.ini`: added `simulator`, `simulator_x4_pro`, `simulator_x4_pro_mac` envs;
   libraries pulled from GitHub instead of the PlatformIO registry.

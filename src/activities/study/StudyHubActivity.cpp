@@ -3,6 +3,7 @@
 #include <Memory.h>
 
 #include "activities/ActivityManager.h"
+#include "activities/study/CompoundActivity.h"
 #include "activities/study/StudySessionActivity.h"
 #include "components/UITheme.h"
 #include "components/UiAppHelpers.h"
@@ -50,6 +51,9 @@ void StudyHubActivity::activateIndex(const int index) {
   nav.selected = index;
   std::unique_ptr<Activity> screen;
   switch (modules[index]) {
+    case StudyModule::COMPOUND:
+      screen = makeUniqueNoThrow<CompoundActivity>(renderer, mappedInput);
+      break;
     case StudyModule::VOCAB:
       screen = makeUniqueNoThrow<StudySessionActivity>(renderer, mappedInput, "vocab", "IELTS / TOEFL");
       break;
