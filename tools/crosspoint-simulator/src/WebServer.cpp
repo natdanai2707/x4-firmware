@@ -1,0 +1,935 @@
+#include "WebServer.h"
+
+#include "SimulatorNetworkPorts.h"
+#include <Logging.h>
+#include <arpa/inet.h>
+#include <fcntl.h>
+#include <netinet/in.h>
+#include <sys/socket.h>
+#include <sys/time.h>
+#include <unistd.h>
+
+#include <algorithm>
+#include <atomic>
+#include <cctype>
+#include <cerrno>
+#include <cstdlib>
+#include <cstring>
+#include <deque>
+#include <map>
+#include <mutex>
+#include <sstream>
+#include <thread>
+#include <utility>
+#include <vector>
+
+namespace {
+constexpr size_t MAX_BODY_SIZE = 256UL * 1024UL * 1024UL;
+constexpr size_t UPLOAD_CHUNK_SIZE = 4096;
+
+std::string lower(std::string value) {
+  std::transform(
+      value.begin(), value.end(), value.begin(),
+      [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+  return value;
+}
+
+std::string trim(std::string value) {
+  while (!value.empty() &&
+         std::isspace(static_cast<unsigned char>(value.front())))
+    value.erase(value.begin());
+  while (!value.empty() &&
+         std::isspace(static_cast<unsigned char>(value.back())))
+    value.pop_back();
+  return value;
+}
+
+int hexValue(char c) {
+  if (c >= '0' && c <= '9')
+    return c - '0';
+  if (c >= 'a' && c <= 'f')
+    return c - 'a' + 10;
+  if (c >= 'A' && c <= 'F')
+    return c - 'A' + 10;
+  return -1;
+}
+
+std::string urlDecodeStd(const std::string &input) {
+  std::string out;
+  out.reserve(input.size());
+  for (size_t i = 0; i < input.size(); ++i) {
+    if (input[i] == '%' && i + 2 < input.size()) {
+      const int hi = hexValue(input[i + 1]);
+      const int lo = hexValue(input[i + 2]);
+      if (hi >= 0 && lo >= 0) {
+        out.push_back(static_cast<char>((hi << 4) | lo));
+        i += 2;
+        continue;
+      }
+    }
+    out.push_back(input[i] == '+' ? ' ' : input[i]);
+  }
+  return out;
+}
+
+const char *reasonForStatus(int status) {
+  switch (status) {
+  case 200:
+    return "OK";
+  case 201:
+    return "Created";
+  case 204:
+    return "No Content";
+  case 207:
+    return "Multi-Status";
+  case 400:
+    return "Bad Request";
+  case 403:
+    return "Forbidden";
+  case 404:
+    return "Not Found";
+  case 405:
+    return "Method Not Allowed";
+  case 409:
+    return "Conflict";
+  case 412:
+    return "Precondition Failed";
+  case 413:
+    return "Payload Too Large";
+  case 415:
+    return "Unsupported Media Type";
+  case 500:
+    return "Internal Server Error";
+  case 501:
+    return "Not Implemented";
+  default:
+    return "OK";
+  }
+}
+
+HTTPMethod methodFromString(const std::string &method) {
+  if (method == "GET")
+    return HTTP_GET;
+  if (method == "POST")
+    return HTTP_POST;
+  if (method == "PUT")
+    return HTTP_PUT;
+  if (method == "PATCH")
+    return HTTP_PATCH;
+  if (method == "DELETE")
+    return HTTP_DELETE;
+  if (method == "OPTIONS")
+    return HTTP_OPTIONS;
+  if (method == "PROPFIND")
+    return HTTP_PROPFIND;
+  if (method == "HEAD")
+    return HTTP_HEAD;
+  if (method == "MKCOL")
+    return HTTP_MKCOL;
+  if (method == "MOVE")
+    return HTTP_MOVE;
+  if (method == "COPY")
+    return HTTP_COPY;
+  if (method == "LOCK")
+    return HTTP_LOCK;
+  if (method == "UNLOCK")
+    return HTTP_UNLOCK;
+  return HTTP_ANY;
+}
+
+void parseArgs(const std::string &encoded,
+               std::vector<std::pair<String, String>> &args) {
+  size_t start = 0;
+  while (start <= encoded.size()) {
+    const size_t amp = encoded.find('&', start);
+    const std::string item = encoded.substr(
+        start, amp == std::string::npos ? std::string::npos : amp - start);
+    if (!item.empty()) {
+      const size_t eq = item.find('=');
+      if (eq == std::string::npos) {
+        args.emplace_back(String(urlDecodeStd(item)), String(""));
+      } else {
+        args.emplace_back(String(urlDecodeStd(item.substr(0, eq))),
+                          String(urlDecodeStd(item.substr(eq + 1))));
+      }
+    }
+    if (amp == std::string::npos)
+      break;
+    start = amp + 1;
+  }
+}
+
+bool sendAll(int client, const void *data, size_t len) {
+  const auto *ptr = static_cast<const char *>(data);
+#ifdef MSG_NOSIGNAL
+  constexpr int sendFlags = MSG_NOSIGNAL;
+#else
+  constexpr int sendFlags = 0;
+#endif
+  while (len > 0) {
+    const ssize_t written = ::send(client, ptr, len, sendFlags);
+    if (written <= 0)
+      return false;
+    ptr += written;
+    len -= static_cast<size_t>(written);
+  }
+  return true;
+}
+
+void sendSimpleResponse(int client, int code, const char *message) {
+  const char *body = message ? message : "";
+  std::ostringstream out;
+  out << "HTTP/1.1 " << code << " " << reasonForStatus(code) << "\r\n"
+      << "Content-Length: " << strlen(body) << "\r\n"
+      << "Content-Type: text/plain\r\n"
+      << "Connection: close\r\n\r\n"
+      << body;
+  sendAll(client, out.str().data(), out.str().size());
+}
+
+void setSocketTimeouts(int client) {
+  timeval timeout{};
+  timeout.tv_sec = 5;
+  setsockopt(client, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout));
+  setsockopt(client, SOL_SOCKET, SO_SNDTIMEO, &timeout, sizeof(timeout));
+#ifdef SO_NOSIGPIPE
+  int yes = 1;
+  setsockopt(client, SOL_SOCKET, SO_NOSIGPIPE, &yes, sizeof(yes));
+#endif
+}
+
+struct MultipartPart {
+  std::string name;
+  std::string filename;
+  std::string data;
+};
+
+std::string headerParam(const std::string &header, const char *key) {
+  const std::string needle = std::string(key) + "=\"";
+  const size_t start = header.find(needle);
+  if (start == std::string::npos)
+    return {};
+  const size_t valueStart = start + needle.size();
+  const size_t valueEnd = header.find('"', valueStart);
+  if (valueEnd == std::string::npos)
+    return {};
+  return header.substr(valueStart, valueEnd - valueStart);
+}
+
+std::vector<MultipartPart> parseMultipart(const std::string &contentType,
+                                          const std::string &body) {
+  std::vector<MultipartPart> parts;
+  const size_t boundaryPos = contentType.find("boundary=");
+  if (boundaryPos == std::string::npos)
+    return parts;
+
+  std::string boundary = contentType.substr(boundaryPos + 9);
+  if (!boundary.empty() && boundary.front() == '"') {
+    boundary.erase(boundary.begin());
+    const size_t quote = boundary.find('"');
+    if (quote != std::string::npos)
+      boundary.resize(quote);
+  } else {
+    const size_t semicolon = boundary.find(';');
+    if (semicolon != std::string::npos)
+      boundary.resize(semicolon);
+  }
+  boundary = "--" + boundary;
+
+  size_t partStart = body.find(boundary);
+  while (partStart != std::string::npos) {
+    partStart += boundary.size();
+    if (partStart + 2 <= body.size() && body.compare(partStart, 2, "--") == 0)
+      break;
+    if (partStart + 2 <= body.size() && body.compare(partStart, 2, "\r\n") == 0)
+      partStart += 2;
+
+    const size_t headersEnd = body.find("\r\n\r\n", partStart);
+    if (headersEnd == std::string::npos)
+      break;
+    const std::string headers = body.substr(partStart, headersEnd - partStart);
+    size_t dataStart = headersEnd + 4;
+    size_t next = body.find(boundary, dataStart);
+    if (next == std::string::npos)
+      break;
+    size_t dataEnd = next;
+    if (dataEnd >= 2 && body.compare(dataEnd - 2, 2, "\r\n") == 0)
+      dataEnd -= 2;
+
+    MultipartPart part;
+    part.name = headerParam(headers, "name");
+    part.filename = headerParam(headers, "filename");
+    part.data = body.substr(dataStart, dataEnd - dataStart);
+    if (!part.name.empty())
+      parts.push_back(std::move(part));
+    partStart = next;
+  }
+  return parts;
+}
+
+// A request read off the socket, waiting for handleClient().
+struct PendingRequest {
+  int client = -1;
+  std::string method;
+  std::string target;
+  std::map<std::string, std::string> headers;
+  std::string body;
+  size_t contentLength = 0;
+  bool tooLarge = false;
+  bool incomplete = false;
+};
+
+// Reads the request line, headers and whole body. Returns false when no
+// header block arrives.
+bool readRequest(int client, PendingRequest &request) {
+  std::string raw;
+  char buffer[8192];
+  while (raw.find("\r\n\r\n") == std::string::npos) {
+    const ssize_t got = ::recv(client, buffer, sizeof(buffer), 0);
+    if (got <= 0)
+      break;
+    raw.append(buffer, static_cast<size_t>(got));
+    if (raw.size() > 1024 * 1024)
+      break;
+  }
+
+  const size_t headerEnd = raw.find("\r\n\r\n");
+  if (headerEnd == std::string::npos)
+    return false;
+
+  std::istringstream headerStream(raw.substr(0, headerEnd));
+  std::string requestLine;
+  std::getline(headerStream, requestLine);
+  if (!requestLine.empty() && requestLine.back() == '\r')
+    requestLine.pop_back();
+  std::istringstream requestLineStream(requestLine);
+  requestLineStream >> request.method >> request.target;
+
+  std::string line;
+  while (std::getline(headerStream, line)) {
+    if (!line.empty() && line.back() == '\r')
+      line.pop_back();
+    const size_t colon = line.find(':');
+    if (colon == std::string::npos)
+      continue;
+    request.headers[lower(line.substr(0, colon))] =
+        trim(line.substr(colon + 1));
+  }
+
+  auto lengthIt = request.headers.find("content-length");
+  if (lengthIt != request.headers.end())
+    request.contentLength = static_cast<size_t>(
+        std::strtoull(lengthIt->second.c_str(), nullptr, 10));
+  if (request.contentLength > MAX_BODY_SIZE) {
+    request.tooLarge = true;
+    return true;
+  }
+
+  request.body = raw.substr(headerEnd + 4);
+  if (request.body.size() > request.contentLength)
+    request.body.resize(request.contentLength);
+  while (request.body.size() < request.contentLength) {
+    const ssize_t got = ::recv(client, buffer, sizeof(buffer), 0);
+    if (got <= 0)
+      break;
+    const size_t wanted = request.contentLength - request.body.size();
+    request.body.append(buffer, std::min(static_cast<size_t>(got), wanted));
+  }
+  request.incomplete = request.body.size() < request.contentLength;
+  return true;
+}
+} // namespace
+
+struct WebServer::Impl {
+  struct Route {
+    String uri;
+    HTTPMethod method = HTTP_GET;
+    std::function<void()> handler;
+    std::function<void()> uploadHandler;
+  };
+
+  explicit Impl(int serverPort)
+      : port(crosspoint_simulator::mapFirmwarePort(serverPort)) {}
+
+  int port;
+  int fd = -1;
+  std::atomic<bool> active{false};
+  std::thread worker;
+  std::mutex queueMutex;
+  std::deque<PendingRequest> queue;
+  std::vector<Route> routes;
+  std::vector<std::unique_ptr<RequestHandler>> requestHandlers;
+  std::function<void()> notFoundHandler;
+  std::vector<String> collectedHeaders;
+  // Run in registration order; ownedMiddlewares keeps the ones built from a
+  // function.
+  std::vector<Middleware *> middlewares;
+  std::vector<std::unique_ptr<Middleware>> ownedMiddlewares;
+
+  int currentClient = -1;
+  HTTPMethod currentMethod = HTTP_GET;
+  String currentUri = "/";
+  std::vector<std::pair<String, String>> currentArgs;
+  std::vector<std::pair<String, String>> currentHeaders;
+  std::vector<std::pair<String, String>> pendingHeaders;
+  size_t requestContentLength = 0;
+  size_t responseContentLength = 0;
+  bool responseContentLengthSet = false;
+  bool responseContentLengthUnknown = false;
+  bool headersSent = false;
+  HTTPUpload currentUpload{};
+
+  String headerByName(const char *name) const {
+    const std::string wanted = lower(name ? name : "");
+    for (const auto &header : currentHeaders) {
+      if (lower(header.first.s) == wanted)
+        return header.second;
+    }
+    return String("");
+  }
+
+  bool hasHeaderName(const char *name) const {
+    const std::string wanted = lower(name ? name : "");
+    for (const auto &header : currentHeaders) {
+      if (lower(header.first.s) == wanted)
+        return true;
+    }
+    return false;
+  }
+
+  std::vector<RequestHandler *> rawHandlers(WebServer &server) {
+    std::vector<RequestHandler *> out;
+    for (auto &requestHandler : requestHandlers) {
+      if (!requestHandler->canRaw(server, currentUri))
+        continue;
+      out.push_back(requestHandler.get());
+    }
+    return out;
+  }
+
+  void emitRawEvent(WebServer &server,
+                    const std::vector<RequestHandler *> &handlers,
+                    HTTPRawStatus status, uint8_t *buf, size_t currentSize) {
+    for (auto *requestHandler : handlers) {
+      HTTPRaw rawEvent{};
+      rawEvent.status = status;
+      rawEvent.totalSize = requestContentLength;
+      rawEvent.currentSize = currentSize;
+      rawEvent.buf = buf;
+      requestHandler->raw(server, currentUri, rawEvent);
+    }
+  }
+
+  void emitMultipartAbort(WebServer &server) {
+    for (auto &handler : requestHandlers) {
+      if (handler->canUpload(server, currentUri)) {
+        currentUpload.status = UPLOAD_FILE_ABORTED;
+        currentUpload.currentSize = 0;
+        currentUpload.totalSize = requestContentLength;
+        currentUpload.buf = nullptr;
+        handler->upload(server, currentUri, currentUpload);
+      }
+    }
+    for (const auto &route : routes) {
+      if (!route.uploadHandler)
+        continue;
+      if (route.uri != currentUri)
+        continue;
+      if (!(route.method == currentMethod || route.method == HTTP_ANY))
+        continue;
+      currentUpload.status = UPLOAD_FILE_ABORTED;
+      currentUpload.currentSize = 0;
+      currentUpload.totalSize = requestContentLength;
+      currentUpload.buf = nullptr;
+      route.uploadHandler();
+      break;
+    }
+  }
+
+  bool runMiddleware(WebServer &server, size_t index,
+                     const Middleware::Callback &finalizer) {
+    if (index >= middlewares.size())
+      return finalizer();
+    return middlewares[index]->run(server, [&, index]() {
+      return runMiddleware(server, index + 1, finalizer);
+    });
+  }
+
+  void resetRequest() {
+    currentClient = -1;
+    currentMethod = HTTP_GET;
+    currentUri = "/";
+    currentArgs.clear();
+    currentHeaders.clear();
+    pendingHeaders.clear();
+    requestContentLength = 0;
+    responseContentLength = 0;
+    responseContentLengthSet = false;
+    responseContentLengthUnknown = false;
+    headersSent = false;
+    currentUpload = HTTPUpload{};
+  }
+
+  void emitHeaders(WebServer &server, int code, const char *contentType, size_t bodyLen) {
+    if (headersSent || currentClient < 0)
+      return;
+    std::ostringstream out;
+    out << "HTTP/1.1 " << code << " " << reasonForStatus(code) << "\r\n";
+    if (responseContentLengthUnknown) {
+      out << "Connection: close\r\n";
+    } else {
+      out << "Content-Length: "
+          << (responseContentLengthSet ? responseContentLength : bodyLen)
+          << "\r\n";
+      out << "Connection: close\r\n";
+    }
+    out << "Content-Type: " << (contentType ? contentType : "text/plain")
+        << "\r\n"
+        << "Access-Control-Allow-Origin: *\r\n";
+    for (const auto &header : pendingHeaders) {
+      out << header.first.c_str() << ": " << header.second.c_str() << "\r\n";
+    }
+    out << "\r\n";
+    const auto headers = out.str();
+    server._currentClientWrite(headers.data(), headers.size());
+    headersSent = true;
+  }
+};
+
+WebServer::WebServer(int port) : impl_(std::make_unique<Impl>(port)) {}
+
+WebServer::~WebServer() {
+  stop();
+  clearArguments();
+}
+
+void WebServer::clearArguments() {
+  delete[] _currentArgs;
+  _currentArgs = nullptr;
+  _currentArgCount = 0;
+  delete[] _postArgs;
+  _postArgs = nullptr;
+  _postArgsLen = 0;
+}
+
+void WebServer::publishArguments() {
+  if (impl_->currentArgs.empty()) return;
+  const int count = _currentArgCount + static_cast<int>(impl_->currentArgs.size());
+  // Host-only request storage mirrors Arduino's protected ownership contract.
+  auto* arguments = new (std::nothrow) RequestArgument[count];
+  if (!arguments) {
+    LOG_ERR("WEB", "[SIM] OOM: request arguments");
+    impl_->currentArgs.clear();
+    return;
+  }
+  for (int i = 0; i < _currentArgCount; ++i) arguments[i] = std::move(_currentArgs[i]);
+  int i = _currentArgCount;
+  for (auto& argument : impl_->currentArgs) {
+    arguments[i++] = {std::move(argument.first), std::move(argument.second)};
+  }
+  delete[] _currentArgs;
+  _currentArgs = arguments;
+  _currentArgCount = count;
+  impl_->currentArgs.clear();
+}
+
+void WebServer::begin() {
+  if (impl_->active)
+    return;
+
+  impl_->fd = ::socket(AF_INET, SOCK_STREAM, 0);
+  if (impl_->fd < 0) {
+    LOG_ERR("WEB", "[SIM] WebServer socket failed: %s", strerror(errno));
+    return;
+  }
+
+  int yes = 1;
+  setsockopt(impl_->fd, SOL_SOCKET, SO_REUSEADDR, &yes, sizeof(yes));
+
+  sockaddr_in addr{};
+  addr.sin_family = AF_INET;
+  addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+  addr.sin_port = htons(impl_->port);
+  if (::bind(impl_->fd, reinterpret_cast<sockaddr *>(&addr), sizeof(addr)) !=
+      0) {
+    LOG_ERR("WEB", "[SIM] WebServer bind 127.0.0.1:%d failed: %s", impl_->port,
+            strerror(errno));
+    ::close(impl_->fd);
+    impl_->fd = -1;
+    return;
+  }
+  if (::listen(impl_->fd, 16) != 0) {
+    LOG_ERR("WEB", "[SIM] WebServer listen failed: %s", strerror(errno));
+    ::close(impl_->fd);
+    impl_->fd = -1;
+    return;
+  }
+
+  impl_->active = true;
+  impl_->worker = std::thread([this] {
+    while (impl_->active) {
+      const int client = ::accept(impl_->fd, nullptr, nullptr);
+      if (client < 0) {
+        if (impl_->active)
+          LOG_ERR("WEB", "[SIM] WebServer accept failed: %s", strerror(errno));
+        continue;
+      }
+      setSocketTimeouts(client);
+
+      PendingRequest request;
+      request.client = client;
+      if (!readRequest(client, request)) {
+        ::close(client);
+        continue;
+      }
+      std::lock_guard<std::mutex> lock(impl_->queueMutex);
+      impl_->queue.push_back(std::move(request));
+    }
+  });
+  LOG_DBG("WEB", "[SIM] WebServer running at http://127.0.0.1:%d/",
+          impl_->port);
+}
+
+// Handlers run here, on the caller's thread, as on the device. The worker
+// thread only reads requests, so firmware code that runs after
+// handleClient() (such as freeing request arguments) cannot race a handler.
+void WebServer::handleClient() {
+  PendingRequest request;
+  {
+    std::lock_guard<std::mutex> lock(impl_->queueMutex);
+    if (impl_->queue.empty())
+      return;
+    request = std::move(impl_->queue.front());
+    impl_->queue.pop_front();
+  }
+
+  const int client = request.client;
+  const size_t bodyLength = request.contentLength;
+  std::string &body = request.body;
+  const size_t queryStart = request.target.find('?');
+  const std::string path = urlDecodeStd(request.target.substr(0, queryStart));
+
+  clearArguments();
+  impl_->resetRequest();
+  impl_->currentClient = client;
+  _currentClient = NetworkClient(::dup(client));
+  impl_->currentMethod = methodFromString(request.method);
+  impl_->currentUri = path.empty() ? "/" : path.c_str();
+  impl_->requestContentLength = bodyLength;
+  for (const auto &header : request.headers) {
+    impl_->currentHeaders.emplace_back(String(header.first),
+                                       String(header.second));
+  }
+  if (queryStart != std::string::npos)
+    parseArgs(request.target.substr(queryStart + 1), impl_->currentArgs);
+
+  auto contentTypeIt = request.headers.find("content-type");
+  const std::string contentType =
+      contentTypeIt == request.headers.end() ? "" : contentTypeIt->second;
+  const auto rawHandlers = impl_->rawHandlers(*this);
+  const bool hasRawHandlers = !rawHandlers.empty();
+  if (request.tooLarge) {
+    LOG_ERR("WEB", "[SIM] Request body too large: %zu bytes", bodyLength);
+    if (hasRawHandlers) {
+      impl_->emitRawEvent(*this, rawHandlers, RAW_START, nullptr, 0);
+      impl_->emitRawEvent(*this, rawHandlers, RAW_ABORTED, nullptr, 0);
+    }
+    sendSimpleResponse(client, 413, "Payload Too Large");
+    _currentClient.stop();
+    ::close(client);
+    impl_->resetRequest();
+    return;
+  }
+  if (hasRawHandlers) {
+    impl_->emitRawEvent(*this, rawHandlers, RAW_START, nullptr, 0);
+    for (size_t offset = 0; offset < body.size();
+         offset += UPLOAD_CHUNK_SIZE) {
+      const size_t currentSize =
+          std::min(UPLOAD_CHUNK_SIZE, body.size() - offset);
+      impl_->emitRawEvent(*this, rawHandlers, RAW_WRITE,
+                          reinterpret_cast<uint8_t *>(&body[offset]),
+                          currentSize);
+    }
+  }
+  if (request.incomplete) {
+    LOG_ERR("WEB", "[SIM] Incomplete request body: %zu/%zu bytes",
+            body.size(), bodyLength);
+    if (hasRawHandlers)
+      impl_->emitRawEvent(*this, rawHandlers, RAW_ABORTED, nullptr, 0);
+    if (contentType.find("multipart/form-data") != std::string::npos)
+      impl_->emitMultipartAbort(*this);
+    sendSimpleResponse(client, 400, "Incomplete request body");
+    _currentClient.stop();
+    ::close(client);
+    impl_->resetRequest();
+    return;
+  }
+  if (hasRawHandlers)
+    impl_->emitRawEvent(*this, rawHandlers, RAW_END, nullptr, 0);
+
+  if (contentType.find("application/x-www-form-urlencoded") !=
+      std::string::npos) {
+    parseArgs(body, impl_->currentArgs);
+  } else if (!body.empty() &&
+             contentType.find("multipart/form-data") == std::string::npos) {
+    impl_->currentArgs.emplace_back(String("plain"), String(body));
+  }
+
+  LOG_DBG("WEB", "[SIM] %s %s", request.method.c_str(),
+          request.target.c_str());
+
+  // As on the device, middlewares wrap route dispatch; one that does not call
+  // next() has answered the request itself.
+  const auto deliverUpload = [&](const std::function<void()> &callback) {
+    const auto parts = parseMultipart(contentType, body);
+    for (const auto &part : parts) {
+      if (part.filename.empty()) {
+        impl_->currentArgs.emplace_back(String(part.name),
+                                        String(part.data));
+      }
+    }
+    for (const auto &part : parts) {
+      if (part.filename.empty())
+        continue;
+      impl_->currentUpload.name = part.name.c_str();
+      impl_->currentUpload.filename = part.filename.c_str();
+      impl_->currentUpload.totalSize = part.data.size();
+      impl_->currentUpload.status = UPLOAD_FILE_START;
+      impl_->currentUpload.currentSize = 0;
+      impl_->currentUpload.buf = nullptr;
+      callback();
+      for (size_t offset = 0; offset < part.data.size();
+           offset += UPLOAD_CHUNK_SIZE) {
+        impl_->currentUpload.status = UPLOAD_FILE_WRITE;
+        impl_->currentUpload.currentSize =
+            std::min(UPLOAD_CHUNK_SIZE, part.data.size() - offset);
+        impl_->currentUpload.buf = reinterpret_cast<uint8_t *>(
+            const_cast<char *>(part.data.data() + offset));
+        callback();
+      }
+      impl_->currentUpload.status = UPLOAD_FILE_END;
+      impl_->currentUpload.currentSize = 0;
+      impl_->currentUpload.buf = nullptr;
+      callback();
+    }
+  };
+  const auto dispatch = [&]() -> bool {
+    bool handled = false;
+    for (const auto &route : impl_->routes) {
+      const bool headMatchesGet =
+          impl_->currentMethod == HTTP_HEAD && route.method == HTTP_GET;
+      if (route.uri == impl_->currentUri &&
+          (route.method == impl_->currentMethod || route.method == HTTP_ANY ||
+           headMatchesGet)) {
+        if (route.uploadHandler &&
+            contentType.find("multipart/form-data") != std::string::npos) {
+          deliverUpload(route.uploadHandler);
+        }
+        route.handler();
+        handled = true;
+        break;
+      }
+    }
+
+    if (!handled) {
+      for (auto &requestHandler : impl_->requestHandlers) {
+        if (!requestHandler->canHandle(*this, impl_->currentMethod, impl_->currentUri))
+          continue;
+        if (contentType.find("multipart/form-data") != std::string::npos &&
+            requestHandler->canUpload(*this, impl_->currentUri)) {
+          deliverUpload([&]() { requestHandler->upload(*this, impl_->currentUri, impl_->currentUpload); });
+        }
+        if (requestHandler->handle(*this, impl_->currentMethod, impl_->currentUri)) {
+          handled = true;
+          break;
+        }
+      }
+    }
+
+    if (!handled) {
+      if (impl_->notFoundHandler) {
+        impl_->notFoundHandler();
+      } else {
+        send(404, "text/plain", "Not Found");
+      }
+    }
+    return true;
+  };
+  impl_->runMiddleware(*this, 0, dispatch);
+
+  _currentClient.stop();
+  ::close(client);
+  impl_->resetRequest();
+}
+
+void WebServer::on(const char *uri, int method, std::function<void()> handler) {
+  impl_->routes.push_back({String(uri), static_cast<HTTPMethod>(method),
+                           std::move(handler), nullptr});
+}
+
+void WebServer::on(const char *uri, int method, std::function<void()> handler,
+                   std::function<void()> uploadHandler) {
+  impl_->routes.push_back({String(uri), static_cast<HTTPMethod>(method),
+                           std::move(handler), std::move(uploadHandler)});
+}
+
+void WebServer::onNotFound(std::function<void()> handler) {
+  impl_->notFoundHandler = std::move(handler);
+}
+
+void WebServer::collectHeaders(const char **headers, size_t count) {
+  impl_->collectedHeaders.clear();
+  for (size_t i = 0; i < count; ++i) {
+    if (headers[i])
+      impl_->collectedHeaders.emplace_back(headers[i]);
+  }
+}
+
+void WebServer::stop() {
+  impl_->active = false;
+  if (impl_->fd >= 0) {
+    ::shutdown(impl_->fd, SHUT_RDWR);
+    ::close(impl_->fd);
+    impl_->fd = -1;
+  }
+  if (impl_->worker.joinable())
+    impl_->worker.join();
+  std::lock_guard<std::mutex> lock(impl_->queueMutex);
+  for (const auto &request : impl_->queue)
+    ::close(request.client);
+  impl_->queue.clear();
+}
+
+void WebServer::addHandler(RequestHandler *handler) {
+  impl_->requestHandlers.emplace_back(handler);
+}
+
+WebServer &WebServer::addMiddleware(Middleware *middleware) {
+  impl_->middlewares.push_back(middleware);
+  return *this;
+}
+
+WebServer &WebServer::addMiddleware(Middleware::Function fn) {
+  impl_->ownedMiddlewares.emplace_back(new MiddlewareFunction(std::move(fn)));
+  return addMiddleware(impl_->ownedMiddlewares.back().get());
+}
+
+WebServer &WebServer::removeMiddleware(Middleware *middleware) {
+  auto &list = impl_->middlewares;
+  list.erase(std::remove(list.begin(), list.end(), middleware), list.end());
+  auto &owned = impl_->ownedMiddlewares;
+  const auto same = [middleware](const std::unique_ptr<Middleware> &m) {
+    return m.get() == middleware;
+  };
+  owned.erase(std::remove_if(owned.begin(), owned.end(), same), owned.end());
+  return *this;
+}
+
+void WebServer::send(int code, const char *content_type, const char *content) {
+  const char *body = content ? content : "";
+  const size_t bodyLen = strlen(body);
+  impl_->emitHeaders(*this, code, content_type, bodyLen);
+  if (impl_->currentMethod != HTTP_HEAD && bodyLen > 0)
+    _currentClientWrite(body, bodyLen);
+}
+
+void WebServer::send_P(int code, const char *content_type, const char *content,
+                       size_t len) {
+  impl_->emitHeaders(*this, code, content_type, len);
+  if (impl_->currentMethod != HTTP_HEAD && content && len > 0)
+    _currentClientWrite(content, len);
+}
+
+void WebServer::sendHeader(const char *name, const char *value, bool first) {
+  if (!name)
+    return;
+  if (first) {
+    impl_->pendingHeaders.insert(impl_->pendingHeaders.begin(),
+                                 {String(name), String(value ? value : "")});
+  } else {
+    impl_->pendingHeaders.emplace_back(String(name),
+                                       String(value ? value : ""));
+  }
+}
+
+void WebServer::sendContent(const String &content) {
+  sendContent(content.c_str());
+}
+
+void WebServer::sendContent(const char *content) {
+  const char *body = content ? content : "";
+  sendContent(body, strlen(body));
+}
+
+void WebServer::sendContent(const char *content, size_t len) {
+  if (!impl_->headersSent)
+    impl_->emitHeaders(*this, 200, "text/plain", len);
+  if (impl_->currentMethod != HTTP_HEAD && content && len > 0)
+    _currentClientWrite(content, len);
+}
+
+void WebServer::setContentLength(size_t len) {
+  impl_->responseContentLengthUnknown =
+      (static_cast<int>(len) == CONTENT_LENGTH_UNKNOWN);
+  impl_->responseContentLengthSet = !impl_->responseContentLengthUnknown;
+  if (impl_->responseContentLengthSet)
+    impl_->responseContentLength = len;
+}
+
+int WebServer::method() { return impl_->currentMethod; }
+String WebServer::uri() { return impl_->currentUri; }
+bool WebServer::hasArg(const char* name) {
+  publishArguments();
+  for (int i = 0; i < _currentArgCount; ++i)
+    if (_currentArgs[i].key == name) return true;
+  return false;
+}
+String WebServer::arg(const char* name) {
+  publishArguments();
+  for (int i = 0; i < _currentArgCount; ++i)
+    if (_currentArgs[i].key == name) return _currentArgs[i].value;
+  return String("");
+}
+String WebServer::arg(int i) {
+  publishArguments();
+  return i >= 0 && i < _currentArgCount ? _currentArgs[i].value : String("");
+}
+int WebServer::args() {
+  publishArguments();
+  return _currentArgCount;
+}
+String WebServer::argName(int i) {
+  publishArguments();
+  return i >= 0 && i < _currentArgCount ? _currentArgs[i].key : String("");
+}
+String WebServer::header(const char *name) { return impl_->headerByName(name); }
+String WebServer::header(int i) {
+  return i >= 0 && i < static_cast<int>(impl_->currentHeaders.size())
+             ? impl_->currentHeaders[i].second
+             : String("");
+}
+String WebServer::headerName(int i) {
+  return i >= 0 && i < static_cast<int>(impl_->currentHeaders.size())
+             ? impl_->currentHeaders[i].first
+             : String("");
+}
+int WebServer::headers() {
+  return static_cast<int>(impl_->currentHeaders.size());
+}
+bool WebServer::hasHeader(const char *name) {
+  return impl_->hasHeaderName(name);
+}
+String WebServer::urlDecode(const String &str) {
+  return String(urlDecodeStd(str.s));
+}
+NetworkClient WebServer::client() { return _currentClient; }
+size_t WebServer::_currentClientWrite(const char *buffer, size_t len) {
+  return _currentClient.write(reinterpret_cast<const uint8_t *>(buffer), len);
+}
+size_t WebServer::_currentClientWrite_P(const char *buffer, size_t len) {
+  return _currentClientWrite(buffer, len);
+}
+long WebServer::clientContentLength() {
+  return static_cast<long>(impl_->requestContentLength);
+}
+HTTPUpload &WebServer::upload() { return impl_->currentUpload; }
