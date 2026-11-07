@@ -4,6 +4,8 @@ add_executable(KoreanLineBreakingTest
   ${REPO_ROOT}/lib/Epub/Epub/WordStore.cpp
   ${REPO_ROOT}/lib/Epub/Epub/blocks/TextBlock.cpp
   ${REPO_ROOT}/lib/Epub/Epub/CjkBreaks.cpp
+  ${REPO_ROOT}/lib/Epub/Epub/ThaiSegmenter.cpp
+  ${REPO_ROOT}/test/thai_segmenter/ThaiDictionaryStoreStub.cpp
   ${REPO_ROOT}/lib/Epub/Epub/hyphenation/Hyphenator.cpp
   ${REPO_ROOT}/lib/Epub/Epub/hyphenation/LanguageRegistry.cpp
   ${REPO_ROOT}/lib/Epub/Epub/hyphenation/LiangHyphenation.cpp

@@ -53,6 +53,31 @@ bool safeFileName(const std::string& name) {
 }
 }  // namespace
 
+std::vector<CompoundActivity::IndexEntry> CompoundActivity::parseIndex(const std::string& text) {
+  // file \t type \t date \t title \t created_at \t hash
+  std::vector<IndexEntry> entries;
+  size_t start = 0;
+  while (start < text.size() && entries.size() < MAX_BRIEFS) {
+    size_t end = text.find('\n', start);
+    if (end == std::string::npos) end = text.size();
+    const std::string line = text.substr(start, end - start);
+    start = end + 1;
+    if (line.empty() || line[0] == '#') continue;
+    IndexEntry e;
+    size_t col = 0;
+    for (int i = 0; i <= 5; ++i) {
+      const size_t tab = line.find('\t', col);
+      const std::string value = trim(line.substr(col, tab == std::string::npos ? std::string::npos : tab - col));
+      if (i == 0) e.file = value;
+      if (i == 5) e.hash = value;
+      if (tab == std::string::npos) break;
+      col = tab + 1;
+    }
+    if (safeFileName(e.file)) entries.push_back(std::move(e));
+  }
+  return entries;
+}
+
 CompoundActivity::CompoundActivity(GfxRenderer& renderer, MappedInputManager& mappedInput)
     : UiListActivity("Compound", renderer, mappedInput) {}
 
@@ -229,33 +254,31 @@ void CompoundActivity::runSync() {
     indexOk = true;
     std::string text;
     Storage.readFileToString("COMPOUND", INDEX_TMP_PATH, MAX_INDEX_BYTES, text);
-    std::vector<std::string> wanted;
-    size_t start = 0;
-    while (start < text.size() && wanted.size() < MAX_BRIEFS) {
-      size_t end = text.find('\n', start);
-      if (end == std::string::npos) end = text.size();
-      const std::string line = text.substr(start, end - start);
-      start = end + 1;
-      if (line.empty() || line[0] == '#') continue;
-      const std::string file = trim(line.substr(0, line.find('\t')));
-      if (safeFileName(file)) wanted.push_back(file);
-    }
-    for (const auto& file : wanted) {
-      const std::string dest = std::string(DIR) + "/" + file;
-      if (Storage.exists(dest.c_str())) continue;
-      if (HttpDownloader::downloadToFile(feedUrl + file, dest, nullptr, nullptr, "", "", headers) ==
+    std::vector<IndexEntry> wanted = parseIndex(text);
+    // Hashes from the previous sync: a brief whose hash changed is downloaded again.
+    std::string oldText;
+    if (Storage.exists(INDEX_PATH)) Storage.readFileToString("COMPOUND", INDEX_PATH, MAX_INDEX_BYTES, oldText);
+    const std::vector<IndexEntry> previous = parseIndex(oldText);
+    for (const auto& entry : wanted) {
+      const std::string dest = std::string(DIR) + "/" + entry.file;
+      const auto old = std::find_if(previous.begin(), previous.end(),
+                                    [&](const IndexEntry& e) { return e.file == entry.file; });
+      const bool changed = old == previous.end() || old->hash != entry.hash;
+      if (Storage.exists(dest.c_str()) && !changed) continue;
+      if (HttpDownloader::downloadToFile(feedUrl + entry.file, dest, nullptr, nullptr, "", "", headers) ==
           HttpDownloader::OK) {
         ++added;
       } else {
         ++failed;
-        LOG_ERR("COMPOUND", "Download failed: %s", file.c_str());
+        LOG_ERR("COMPOUND", "Download failed: %s", entry.file.c_str());
       }
     }
     Storage.replaceFile(INDEX_TMP_PATH, INDEX_PATH);
     // Drop briefs that left the feed (the feed keeps the newest ones).
     for (const auto& name : Storage.listFiles(DIR, 200)) {
       const std::string file = name.c_str();
-      if (safeFileName(file) && std::find(wanted.begin(), wanted.end(), file) == wanted.end()) {
+      if (safeFileName(file) && std::none_of(wanted.begin(), wanted.end(),
+                                             [&](const IndexEntry& e) { return e.file == file; })) {
         Storage.remove((std::string(DIR) + "/" + file).c_str());
       }
     }
@@ -276,7 +299,7 @@ void CompoundActivity::runSync() {
     } else if (failed > 0) {
       syncStatus = std::to_string(added) + " new, " + std::to_string(failed) + " failed";
     } else {
-      syncStatus = added == 0 ? "Up to date" : std::to_string(added) + " new briefs";
+      syncStatus = added == 0 ? "Up to date" : std::to_string(added) + " new or updated briefs";
     }
     rebuildRows();
   }

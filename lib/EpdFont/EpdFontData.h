@@ -112,6 +112,78 @@ constexpr int raiseAboveBase(const Anchor anchor, const int markTop, const int m
 
 }  // namespace combiningMark
 
+/// Thai vowel and tone mark placement without GPOS/GSUB. Thai fonts design
+/// their marks as zero-advance glyphs drawn to the left of the cursor, so the
+/// font-native spot is "just after the base". Three cases need help:
+/// a tone mark over an upper vowel (or before SARA AM) must be stacked above
+/// it, upper marks on tall consonants (PO PLA, FO FA, FO FAN, LO CHULA) must
+/// move left of the ascender, and lower vowels under DO CHADA / TO PATAK must
+/// drop below the descender. Metrics are baseline-relative pixels, as in EpdGlyph.
+namespace thaiMark {
+
+enum class Kind : uint8_t { None, Above, Tone, Below };
+
+constexpr Kind kindOf(const uint32_t cp) {
+  if (cp == 0x0E31 || (cp >= 0x0E34 && cp <= 0x0E37) || cp == 0x0E47 || cp == 0x0E4D || cp == 0x0E4E) {
+    return Kind::Above;
+  }
+  if (cp >= 0x0E48 && cp <= 0x0E4C) return Kind::Tone;  // MAI EK..MAI CHATTAWA, THANTHAKHAT
+  if (cp >= 0x0E38 && cp <= 0x0E3A) return Kind::Below;
+  return Kind::None;
+}
+
+constexpr bool isTallBase(const uint32_t cp) { return cp == 0x0E1B || cp == 0x0E1D || cp == 0x0E1F || cp == 0x0E2C; }
+constexpr bool isDescenderBase(const uint32_t cp) { return cp == 0x0E0E || cp == 0x0E0F; }
+
+constexpr int NO_STACK = -32768;
+
+struct Box {
+  int left;    ///< x from the glyph's cursor to its bitmap's left edge
+  int width;
+  int top;     ///< y from the baseline up to the bitmap's top edge
+  int height;
+};
+
+struct Placement {
+  int x;      ///< cursor x at which to render the mark
+  int raise;  ///< pixels to move the mark up (negative moves it down)
+};
+
+/// baseCursor/baseAfter: cursor x before and after the base glyph's advance.
+/// stackTop: top of the highest mark already placed on this base (or of a
+/// following SARA AM), NO_STACK when there is none.
+constexpr Placement place(const Kind kind, const uint32_t baseCp, const int baseCursor, const Box& base,
+                          const int baseAfter, const Box& mark, const int stackTop, const int gap) {
+  Placement p{baseAfter, 0};
+  if (kind == Kind::None || base.width <= 0) return p;
+  const int markBottom = mark.top - mark.height;
+
+  if ((kind == Kind::Above || kind == Kind::Tone) && isTallBase(baseCp)) {
+    const int stem = base.width / 6 > 1 ? base.width / 6 : 1;
+    const int limit = baseCursor + base.left + base.width - stem - gap;
+    const int right = baseAfter + mark.left + mark.width;
+    if (right > limit) p.x -= right - limit;
+  }
+
+  if (kind == Kind::Tone || kind == Kind::Above) {
+    // Clear what sits below: an earlier mark (or SARA AM's ring) if any,
+    // otherwise the base itself; tall bases are already cleared sideways.
+    int floor = NO_STACK;
+    if (stackTop != NO_STACK) {
+      floor = stackTop;
+    } else if (kind == Kind::Tone && !isTallBase(baseCp)) {
+      floor = base.top;
+    }
+    if (floor != NO_STACK && markBottom < floor + gap) p.raise = floor + gap - markBottom;
+  } else if (kind == Kind::Below && isDescenderBase(baseCp)) {
+    const int baseBottom = base.top - base.height;
+    if (mark.top > baseBottom - gap) p.raise = (baseBottom - gap) - mark.top;
+  }
+  return p;
+}
+
+}  // namespace thaiMark
+
 /// GCC/Clang (the ESP32 firmware toolchain) pack structs with __attribute__((packed)).
 /// MSVC (host unit tests) has no equivalent attribute and instead needs a #pragma pack
 /// region achieving the same 1-byte alignment. These macros keep the on-disk font layout

@@ -15,6 +15,8 @@
 #include <vector>
 
 #include "CjkBreaks.h"
+#include "ThaiDictionaryStore.h"
+#include "ThaiSegmenter.h"
 #include "TokenBoundary.h"
 #include "hyphenation/HyphenationCommon.h"
 #include "hyphenation/Hyphenator.h"
@@ -537,7 +539,11 @@ void ParsedText::addWord(std::string word, const EpdFontFamily::Style fontStyle,
     wordVisibleOffsetDeltas.reserve(newCapacity);
   };
 
-  if (auto breakOffsets = CjkBreaks::characterBreakByteOffsets(word); !breakOffsets.empty()) {
+  // Thai has no spaces between words: split at word boundaries from the word list.
+  const bool thaiWord = ThaiSegmenter::containsThai(word);
+  if (auto breakOffsets = thaiWord ? ThaiSegmenter::breakByteOffsets(word, ThaiDictionaryStore::get())
+                                   : CjkBreaks::characterBreakByteOffsets(word);
+      !breakOffsets.empty()) {
     // CJK-heavy paragraphs can push hundreds of tiny tokens quickly when CSS toggles
     // inline styles. Reserve once up front to avoid repeated vector growth reallocations.
     ensureTokenCapacity(breakOffsets.size() + 1);
@@ -1515,13 +1521,20 @@ void ParsedText::extractLine(const size_t breakIndex, const int pageWidth, const
   size_t actualGapCount = 0;
   int totalNaturalGaps = 0;
 
+  // Thai words are written without spaces; justification stretches only real
+  // spaces there, never the break opportunities between Thai words.
+  const auto thaiJoinAt = [&](const size_t wordIdx) {
+    return wordIdx > 0 && noSpaceBeforeVec[lastBreakAt + wordIdx] &&
+           utf8IsThai(lastCodepoint(lineWords[wordIdx - 1])) && utf8IsThai(firstCodepoint(lineWords[wordIdx]));
+  };
+
   for (size_t wordIdx = 0; wordIdx < lineWordCount; wordIdx++) {
     lineWordWidthSum += wordWidths[lastBreakAt + wordIdx];
     if (wordIdx == 0) continue;
     const size_t boundaryIdx = lastBreakAt + wordIdx;
     const bool isStretchableSpace =
         lineWords[wordIdx] == " " && wordIdx + 1 < lineWordCount && continuesVec[boundaryIdx + 1];
-    if (TokenBoundary::isJustifiableGap(continuesVec[boundaryIdx], isStretchableSpace)) {
+    if (TokenBoundary::isJustifiableGap(continuesVec[boundaryIdx], isStretchableSpace) && !thaiJoinAt(wordIdx)) {
       actualGapCount++;
     }
     if (continuesVec[boundaryIdx]) {
@@ -1781,7 +1794,8 @@ void ParsedText::extractLine(const size_t breakIndex, const int pageWidth, const
                                                                     lineWordStyles[wordIdx]),
                                            wordSpacingPercent);
           }
-          if (wordIdx + 1 < lineWordCount && effectiveAlignment == CssTextAlign::Justify && !isLastLine) {
+          if (wordIdx + 1 < lineWordCount && effectiveAlignment == CssTextAlign::Justify && !isLastLine &&
+              !thaiJoinAt(wordIdx + 1)) {
             gap += justifyExtra;
           }
           xpos += wordWidths[lastBreakAt + wordIdx] + gap;

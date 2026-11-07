@@ -19,6 +19,8 @@ void EpdFont::getTextBounds(const char* string, const int startX, const int star
   int lastBaseLeft = 0;
   int lastBaseWidth = 0;
   int lastBaseTop = 0;
+  int lastBaseHeight = 0;
+  int thaiStackTop = thaiMark::NO_STACK;
   int32_t prevAdvanceFP = 0;  // 12.4 fixed-point: prev glyph's advance + next kern for snap
   uint32_t cp;
   uint32_t prevCp = 0;
@@ -46,16 +48,26 @@ void EpdFont::getTextBounds(const char* string, const int startX, const int star
     }
 
     const combiningMark::Anchor anchor = combiningMark::anchorFor(cp);
-    const int raiseBy = isCombining ? combiningMark::raiseAboveBase(anchor, glyph->top, glyph->height, lastBaseTop) : 0;
+    int raiseBy = isCombining ? combiningMark::raiseAboveBase(anchor, glyph->top, glyph->height, lastBaseTop) : 0;
 
     if (!isCombining && prevCp != 0) {
       const auto kernFP = getKerning(prevCp, cp);  // 4.4 fixed-point kern
       lastBaseX += fp4::toPixel(prevAdvanceFP + kernFP);
     }
 
-    const int glyphBaseX = isCombining ? combiningMark::anchorOver(anchor, lastBaseX, lastBaseLeft, lastBaseWidth,
-                                                                   glyph->left, glyph->width)
-                                       : lastBaseX;
+    int glyphBaseX = isCombining ? combiningMark::anchorOver(anchor, lastBaseX, lastBaseLeft, lastBaseWidth,
+                                                             glyph->left, glyph->width)
+                                 : lastBaseX;
+    // Same placement as GfxRenderer::drawText (without its SARA AM lookahead).
+    if (const auto thaiKind = thaiMark::kindOf(cp); thaiKind != thaiMark::Kind::None) {
+      const auto placed = thaiMark::place(
+          thaiKind, prevCp, lastBaseX, thaiMark::Box{lastBaseLeft, lastBaseWidth, lastBaseTop, lastBaseHeight},
+          lastBaseX + fp4::toPixel(prevAdvanceFP), thaiMark::Box{glyph->left, glyph->width, glyph->top, glyph->height},
+          thaiStackTop, combiningMark::MIN_GAP_PX);
+      glyphBaseX = placed.x;
+      raiseBy = placed.raise;
+      if (thaiKind != thaiMark::Kind::Below) thaiStackTop = std::max(thaiStackTop, glyph->top + placed.raise);
+    }
     const int glyphBaseY = startY - raiseBy;
 
     *minX = std::min(*minX, glyphBaseX + glyph->left);
@@ -67,6 +79,8 @@ void EpdFont::getTextBounds(const char* string, const int startX, const int star
       lastBaseLeft = glyph->left;
       lastBaseWidth = glyph->width;
       lastBaseTop = glyph->top;
+      lastBaseHeight = glyph->height;
+      thaiStackTop = thaiMark::NO_STACK;
       prevAdvanceFP = glyph->advanceX;  // 12.4 fixed-point
       prevCp = cp;
     }

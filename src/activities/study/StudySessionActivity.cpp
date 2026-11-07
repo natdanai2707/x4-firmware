@@ -14,18 +14,6 @@ namespace {
 constexpr const char* ANSWER_LABELS[3] = {"Again", "Good", "Easy"};
 constexpr int ANSWER_ZONE_HEIGHT = 72;
 constexpr int ANSWER_ZONE_GAP = 10;
-
-// Thai (U+0E00..U+0E7F, UTF-8 lead E0 B8/B9) has no glyphs in the built-in
-// fonts yet. Hide such fields instead of drawing replacement boxes; drop this
-// once Thai rendering lands.
-bool hasThai(const std::string& text) {
-  for (size_t i = 0; i + 1 < text.size(); ++i) {
-    const auto b0 = static_cast<uint8_t>(text[i]);
-    const auto b1 = static_cast<uint8_t>(text[i + 1]);
-    if (b0 == 0xE0 && (b1 == 0xB8 || b1 == 0xB9)) return true;
-  }
-  return false;
-}
 }  // namespace
 
 StudySessionActivity::StudySessionActivity(GfxRenderer& renderer, MappedInputManager& mappedInput,
@@ -63,7 +51,8 @@ void StudySessionActivity::onEnter() {
 
 void StudySessionActivity::onExit() {
   Activity::onExit();
-  font.reset();
+  cjkFont.reset();
+  thaiFont.reset();
   deck.reset();
   queue.clear();
   queue.shrink_to_fit();
@@ -73,15 +62,22 @@ void StudySessionActivity::loadCurrentCard() {
   if (!deck->readCard(queue[position], fields)) {
     fields.assign(1, "(card unreadable)");
   }
-  if (!fontTried && std::any_of(fields.begin(), fields.end(), StudyFont::needsFont)) {
-    fontTried = true;
-    font = makeUniqueNoThrow<StudyFont>(renderer);
+  const auto loadFont = [this](std::unique_ptr<StudyFont>& font, bool& tried, StudyFont::Script script,
+                               bool (*needs)(const std::string&)) {
+    if (tried || std::none_of(fields.begin(), fields.end(), needs)) return;
+    tried = true;
+    font = makeUniqueNoThrow<StudyFont>(renderer, script);
     if (font && !font->load()) font.reset();
-  }
+  };
+  loadFont(cjkFont, cjkTried, StudyFont::Script::Cjk, &StudyFont::needsFont);
+  loadFont(thaiFont, thaiTried, StudyFont::Script::Thai, &StudyFont::needsThai);
 }
 
 int StudySessionActivity::fontFor(const std::string& text, const bool front) const {
-  if (font && StudyFont::needsFont(text)) return front ? font->frontFontId() : font->bodyFontId();
+  const StudyFont* font = nullptr;
+  if (cjkFont && StudyFont::needsFont(text)) font = cjkFont.get();
+  if (!font && thaiFont && StudyFont::needsThai(text)) font = thaiFont.get();
+  if (font) return front ? font->frontFontId() : font->bodyFontId();
   return front ? NOTOSANS_18_FONT_ID : UI_12_FONT_ID;
 }
 
@@ -256,7 +252,6 @@ void StudySessionActivity::renderBack(const int top, const int width) {
   y += metrics.verticalSpacing * 2;
 
   for (size_t f = 1; f < fields.size(); ++f) {
-    if (hasThai(fields[f])) continue;
     const int fontId = fontFor(fields[f], false);
     const int lineHeight = renderer.getLineHeight(fontId);
     // Meaning regular; later fields (examples) italic where the font has it.

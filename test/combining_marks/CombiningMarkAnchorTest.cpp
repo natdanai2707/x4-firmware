@@ -1,6 +1,7 @@
 #include <gtest/gtest.h>
 
 #include "lib/EpdFont/EpdFontData.h"
+#include "lib/Utf8/Utf8.h"
 
 // ============================================================================
 // Anchor selection and placement for combining marks without GPOS tables.
@@ -70,4 +71,62 @@ TEST(RaiseAboveBase, CentreRaisedBehaviourUnchanged) {
   EXPECT_EQ(raiseAboveBase(Anchor::CenterRaised, 16, 3, 12), 0);
   // Below-baseline mark (kasra, cedilla): stays at font-native position.
   EXPECT_EQ(raiseAboveBase(Anchor::CenterRaised, 2, 4, 12), 0);
+}
+
+// ============================================================================
+// Thai mark placement (thaiMark::place). Pixel metrics modelled on Sarabun at
+// ~20 px/em: base KO KAI advance 12, bitmap left 1 width 9 top 12 height 12.
+// ============================================================================
+
+namespace {
+constexpr thaiMark::Box KO_KAI{1, 9, 12, 12};
+constexpr thaiMark::Box PO_PLA{0, 12, 16, 16};    // ascender on the right
+constexpr thaiMark::Box DO_CHADA{0, 11, 12, 18};  // descender to -6
+constexpr thaiMark::Box SARA_I{-10, 9, 18, 5};    // bottom 13
+constexpr thaiMark::Box MAI_EK{-3, 2, 18, 4};     // bottom 14, same level as SARA_I
+constexpr thaiMark::Box SARA_U{-5, 4, -1, 5};     // under the baseline
+constexpr int GAP = combiningMark::MIN_GAP_PX;
+}  // namespace
+
+TEST(ThaiMark, Kinds) {
+  EXPECT_EQ(thaiMark::kindOf(0x0E34), thaiMark::Kind::Above);  // SARA I
+  EXPECT_EQ(thaiMark::kindOf(0x0E31), thaiMark::Kind::Above);  // MAI HAN-AKAT
+  EXPECT_EQ(thaiMark::kindOf(0x0E48), thaiMark::Kind::Tone);   // MAI EK
+  EXPECT_EQ(thaiMark::kindOf(0x0E4C), thaiMark::Kind::Tone);   // THANTHAKHAT
+  EXPECT_EQ(thaiMark::kindOf(0x0E38), thaiMark::Kind::Below);  // SARA U
+  EXPECT_EQ(thaiMark::kindOf(0x0E01), thaiMark::Kind::None);   // KO KAI
+  EXPECT_TRUE(utf8IsCombiningMark(0x0E49));
+  EXPECT_FALSE(utf8IsCombiningMark(0x0E33));  // SARA AM advances
+}
+
+TEST(ThaiMark, PlainMarkKeepsFontPosition) {
+  const auto p = thaiMark::place(thaiMark::Kind::Above, 0x0E01, 100, KO_KAI, 112, SARA_I, thaiMark::NO_STACK, GAP);
+  EXPECT_EQ(p.x, 112);
+  EXPECT_EQ(p.raise, 0);
+}
+
+TEST(ThaiMark, ToneStacksAboveUpperVowel) {
+  const int vowelTop = SARA_I.top;  // 18
+  const auto p = thaiMark::place(thaiMark::Kind::Tone, 0x0E01, 100, KO_KAI, 112, MAI_EK, vowelTop, GAP);
+  EXPECT_EQ(p.x, 112);
+  EXPECT_EQ(MAI_EK.top - MAI_EK.height + p.raise, vowelTop + GAP);  // bottom just clears the vowel
+}
+
+TEST(ThaiMark, ToneAloneStaysLow) {
+  const auto p = thaiMark::place(thaiMark::Kind::Tone, 0x0E01, 100, KO_KAI, 112, MAI_EK, thaiMark::NO_STACK, GAP);
+  EXPECT_EQ(p.raise, 0);  // bottom 14 already clears the base top 12
+}
+
+TEST(ThaiMark, UpperMarkMovesLeftOfTallAscender) {
+  const auto p = thaiMark::place(thaiMark::Kind::Above, 0x0E1B, 100, PO_PLA, 113, SARA_I, thaiMark::NO_STACK, GAP);
+  const int stem = PO_PLA.width / 6;
+  EXPECT_EQ(p.x + SARA_I.left + SARA_I.width, 100 + PO_PLA.left + PO_PLA.width - stem - GAP);
+  EXPECT_EQ(p.raise, 0);
+}
+
+TEST(ThaiMark, LowerVowelDropsBelowDescender) {
+  const auto p = thaiMark::place(thaiMark::Kind::Below, 0x0E0E, 100, DO_CHADA, 112, SARA_U, thaiMark::NO_STACK, GAP);
+  EXPECT_EQ(SARA_U.top + p.raise, (DO_CHADA.top - DO_CHADA.height) - GAP);
+  const auto plain = thaiMark::place(thaiMark::Kind::Below, 0x0E01, 100, KO_KAI, 112, SARA_U, thaiMark::NO_STACK, GAP);
+  EXPECT_EQ(plain.raise, 0);
 }

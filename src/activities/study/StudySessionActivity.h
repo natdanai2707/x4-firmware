@@ -42,6 +42,9 @@ class StudySessionActivity final : public Activity {
   size_t plannedCount = 0;  // size of the plan before any Again
   uint16_t reviewed = 0;
   std::vector<std::string> fields;
-  std::unique_ptr<StudyFont> font;  // loaded on the first card that needs it
-  bool fontTried = false;
+  // Loaded on the first card that needs them.
+  std::unique_ptr<StudyFont> cjkFont;
+  std::unique_ptr<StudyFont> thaiFont;
+  bool cjkTried = false;
+  bool thaiTried = false;
 };

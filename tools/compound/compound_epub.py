@@ -2,14 +2,17 @@
 """Turn one Compound brief (JSON from the Compound app) into an EPUB for the
 X4 Pro, and update the feed index the device syncs from.
 
-Usage: compound_epub.py <brief.json> <doc_id> <feed_dir> [--thai] [--keep N]
+Usage: compound_epub.py <brief.json> <doc_id> <feed_dir> [--no-thai] [--keep N]
 
 Writes <feed_dir>/<doc_id>.epub and rewrites <feed_dir>/index.txt, one line
-per brief, newest first:  <doc_id>.epub <TAB> <type> <TAB> <date> <TAB> <title>
-Only the newest N briefs (default 30) are kept; older EPUBs are deleted.
-Thai translation fields are left out unless --thai is given (the device font
-has no Thai glyphs yet).
+per brief, newest first, tab separated:
+  <doc_id>.epub, type, date, title, created_at, content hash
+The device re-downloads a brief when its hash changes. Only the newest N
+briefs (default 30) are kept; older EPUBs are deleted. Thai translations are
+included unless --no-thai is given (they need a Thai reader font such as
+Sarabun on the device).
 """
+import hashlib
 import html
 import json
 import os
@@ -184,13 +187,13 @@ def read_index(feed_dir):
             for line in f:
                 parts = line.rstrip("\n").split("\t")
                 if len(parts) >= 4 and not line.startswith("#"):
-                    rows.append(parts[:5] + [""] * (5 - len(parts[:5])))
+                    rows.append(parts[:6] + [""] * (6 - len(parts[:6])))
     return rows
 
 
 def main():
     args = [a for a in sys.argv[1:] if not a.startswith("--")]
-    thai = "--thai" in sys.argv
+    thai = "--no-thai" not in sys.argv
     keep = 30
     if "--keep" in sys.argv:
         keep = int(sys.argv[sys.argv.index("--keep") + 1])
@@ -207,7 +210,9 @@ def main():
     build_epub(b, doc_id, os.path.join(feed_dir, epub_name), thai)
 
     title = " ".join(str(b.get("title_en") or doc_id).split())
-    row = [epub_name, b.get("type", ""), b.get("date", ""), title, b.get("created_at", "")]
+    with open(os.path.join(feed_dir, epub_name), "rb") as f:
+        digest = hashlib.sha1(f.read()).hexdigest()[:12]
+    row = [epub_name, b.get("type", ""), b.get("date", ""), title, b.get("created_at", ""), digest]
     rows = [r for r in read_index(feed_dir) if r[0] != epub_name] + [row]
     rows.sort(key=sort_key, reverse=True)
     kept, dropped = rows[:keep], rows[keep:]
@@ -217,7 +222,7 @@ def main():
         except FileNotFoundError:
             pass
     with open(os.path.join(feed_dir, INDEX), "w", encoding="utf-8") as f:
-        f.write("# Compound feed: file, type, date, title, created_at (newest first)\n")
+        f.write("# Compound feed: file, type, date, title, created_at, hash (newest first)\n")
         for r in kept:
             f.write("\t".join(r) + "\n")
     print(f"{epub_name}: written; index has {len(kept)} briefs, removed {len(dropped)}")

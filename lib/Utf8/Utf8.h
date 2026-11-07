@@ -115,10 +115,19 @@ inline uint32_t utf8SmallCapsUpper(const uint32_t cp) {
   return cp;
 }
 
+// Thai above/below vowels, tone marks and signs (general category Mn).
+inline bool utf8IsThaiMark(const uint32_t cp) {
+  return cp == 0x0E31 || (cp >= 0x0E34 && cp <= 0x0E3A) || (cp >= 0x0E47 && cp <= 0x0E4E);
+}
+
+// Thai script block.
+inline bool utf8IsThai(const uint32_t cp) { return cp >= 0x0E01 && cp <= 0x0E5B; }
+
 // Returns true for Unicode combining diacritical marks that should not advance the cursor.
 inline bool utf8IsCombiningMark(const uint32_t cp) {
   return (cp >= 0x0300 && cp <= 0x036F)      // Combining Diacritical Marks
          || (cp >= 0x1DC0 && cp <= 0x1DFF)   // Combining Diacritical Marks Supplement
          || (cp >= 0x20D0 && cp <= 0x20FF)   // Combining Diacritical Marks for Symbols
-         || (cp >= 0xFE20 && cp <= 0xFE2F);  // Combining Half Marks
+         || (cp >= 0xFE20 && cp <= 0xFE2F)   // Combining Half Marks
+         || utf8IsThaiMark(cp);              // Thai vowels and tone marks (placed by thaiMark::place)
 }

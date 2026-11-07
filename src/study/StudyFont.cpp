@@ -10,15 +10,28 @@
 #endif
 
 namespace {
-constexpr const char* FONT_PATHS[] = {"/study/font.ttf", "/study/font.otf"};
+constexpr const char* CJK_PATHS[] = {"/study/font.ttf", "/study/font.otf"};
+constexpr const char* THAI_PATHS[] = {"/study/thai.ttf", "/study/thai.otf"};
 constexpr uint16_t FRONT_POINT_SIZE = 28;
 constexpr uint16_t BODY_POINT_SIZE = 12;
 // Fixed ids, salted apart from the reader and UI font id spaces.
-constexpr int FRONT_FONT_ID = 0x53545546;  // "STUF"
-constexpr int BODY_FONT_ID = 0x53545542;   // "STUB"
+constexpr int CJK_FRONT_ID = 0x53545546;   // "STUF"
+constexpr int CJK_BODY_ID = 0x53545542;    // "STUB"
+constexpr int THAI_FRONT_ID = 0x53545446;  // "STTF"
+constexpr int THAI_BODY_ID = 0x53545442;   // "STTB"
 }  // namespace
 
-StudyFont::StudyFont(GfxRenderer& renderer) : renderer(renderer) {}
+StudyFont::StudyFont(GfxRenderer& renderer, const Script script) : renderer(renderer), script(script) {}
+
+bool StudyFont::needsThai(const std::string& text) {
+  for (size_t i = 0; i + 1 < text.size(); ++i) {
+    if (static_cast<uint8_t>(text[i]) == 0xE0 &&
+        (static_cast<uint8_t>(text[i + 1]) == 0xB8 || static_cast<uint8_t>(text[i + 1]) == 0xB9)) {
+      return true;
+    }
+  }
+  return false;
+}
 
 StudyFont::~StudyFont() { unload(); }
 
@@ -37,7 +50,8 @@ bool StudyFont::load() {
 #if CROSSPOINT_VECTOR_FONTS
   if (available()) return true;
   const char* path = nullptr;
-  for (const char* candidate : FONT_PATHS) {
+  const bool thai = script == Script::Thai;
+  for (const char* candidate : thai ? THAI_PATHS : CJK_PATHS) {
     if (Storage.exists(candidate)) {
       path = candidate;
       break;
@@ -69,12 +83,12 @@ bool StudyFont::load() {
     unload();
     return false;
   }
-  renderer.insertFont(FRONT_FONT_ID, front->family());
-  renderer.registerTtfFont(FRONT_FONT_ID, front.get());
-  renderer.insertFont(BODY_FONT_ID, body->family());
-  renderer.registerTtfFont(BODY_FONT_ID, body.get());
-  frontId = FRONT_FONT_ID;
-  bodyId = BODY_FONT_ID;
+  frontId = thai ? THAI_FRONT_ID : CJK_FRONT_ID;
+  bodyId = thai ? THAI_BODY_ID : CJK_BODY_ID;
+  renderer.insertFont(frontId, front->family());
+  renderer.registerTtfFont(frontId, front.get());
+  renderer.insertFont(bodyId, body->family());
+  renderer.registerTtfFont(bodyId, body.get());
   LOG_INF("STUDY", "Study font loaded from %s (%lu KB)", path, size / 1024);
   return true;
 #else

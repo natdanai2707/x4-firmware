@@ -21,6 +21,12 @@ class CompoundActivity final : public UiListActivity {
   bool preventAutoSleep() override { return syncing; }
 
  private:
+  struct IndexEntry {
+    std::string file;
+    std::string hash;
+  };
+  static std::vector<IndexEntry> parseIndex(const std::string& text);
+
   struct Brief {
     std::string file;
     std::string type;

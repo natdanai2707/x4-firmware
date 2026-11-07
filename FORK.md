@@ -59,7 +59,7 @@ Before the first flash: back up the stock firmware with
 3. [x] SRS engine shared by IELTS/TOEFL vocab and Chinese flashcards
 4. [x] Chinese font for study cards (`/study/font.ttf`)
 5. [x] Compound briefs synced over WiFi (feed setup below)
-6. [ ] Thai rendering (vowel/tone stacking, word breaking)
+6. [x] Thai: vowel and tone placement, word breaking, Thai on study cards and in Compound
 
 ## Study decks
 
@@ -89,6 +89,34 @@ It must be TrueType outlines: the firmware font engine has no CFF (.otf) driver.
 
 Scheduler tests: `cmake -S test -B build/test && cmake --build build/test --target SrsSchedulerTest && build/test/srs_scheduler/SrsSchedulerTest`
 
+## SD card setup
+
+Copy from `data/`:
+
+| SD card path | From | For |
+|---|---|---|
+| `/study/vocab.tsv`, `/study/chinese.tsv` | `data/study/` | Study decks |
+| `/study/font.ttf` | `data/study/font.ttf` | Chinese on cards |
+| `/study/thai.ttf` | `data/study/thai.ttf` | Thai meanings on cards |
+| `/compound/feed.txt` | `data/compound-feed.txt` | Compound sync |
+| `/fonts/Sarabun/*.ttf` | `data/fonts/Sarabun/` | Thai + English reader font |
+| `/thai/words.dic` | `data/thai/words.dic` | Thai line breaking |
+
+Then Settings > Reader > Font Family > Sarabun. Sarabun has Latin too, so it
+works for English books, and it lets the menus and Compound briefs show Thai.
+
+## Thai
+
+- Vowels and tone marks are zero-advance marks placed by `thaiMark::place`
+  (`lib/EpdFont/EpdFontData.h`): tone marks stack above upper vowels and
+  SARA AM, upper marks move left of the ascender on ป ฝ ฟ ฬ, lower vowels drop
+  under ฎ ฏ. Fonts need no GSUB/GPOS for this.
+- Line breaks between Thai words come from `lib/Epub/Epub/ThaiSegmenter`
+  (maximal matching on `/thai/words.dic`, loaded into PSRAM). Without the file
+  Thai still breaks, at character clusters only.
+- Justified text stretches real spaces only, not the joins between Thai words.
+- Not covered: rotated (landscape) text uses the generic mark placement.
+
 ## Compound feed
 
 Study > Compound > Sync now joins WiFi, downloads `index.txt` and any new
@@ -102,6 +130,9 @@ points at the public feed repo:
 
 (For a private feed add a line `token=<GitHub token with read access>`.)
 
+Briefs include the Thai translation (needs the Sarabun reader font). Sync
+downloads new briefs and re-downloads any whose hash in `index.txt` changed.
+
 Publishing: the three Compound scheduled tasks (Morning Market News, Daily
 Econ Brief, Idea on Demand) run `tools/publish.sh` in
 [compound-feed](https://github.com/natdanai2707/compound-feed) after each
@@ -111,7 +142,9 @@ left out until Thai rendering works (`--thai` adds them).
 
 ## Local changes vs upstream
 
-- `src/study/`, `src/activities/study/`: Study hub, SRS scheduler, deck store, study font, session screen, Compound sync.
+- `src/study/`, `src/activities/study/`: Study hub, SRS scheduler, deck store, study fonts, session screen, Compound sync.
+- `lib/Utf8/Utf8.h`, `lib/EpdFont/`, `lib/GfxRenderer/GfxRenderer.cpp`: Thai marks.
+- `lib/Epub/Epub/ThaiSegmenter.*`, `ThaiDictionaryStore.*`, `ParsedText.cpp`, `Section.cpp` (cache v74): Thai line breaking.
 - `src/activities/home/HomeActivity.*`: Study entry first on the list home.
 - `platformio.ini`: added `simulator`, `simulator_x4_pro`, `simulator_x4_pro_mac` envs;
   libraries pulled from GitHub instead of the PlatformIO registry.

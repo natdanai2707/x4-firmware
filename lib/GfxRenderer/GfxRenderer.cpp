@@ -721,6 +721,9 @@ void GfxRenderer::drawText(const int fontId, const int x, const int y, const cha
   int lastBaseLeft = 0;
   int lastBaseWidth = 0;
   int lastBaseTop = 0;
+  int lastBaseHeight = 0;
+  uint32_t lastBaseCp = 0;
+  int thaiStackTop = thaiMark::NO_STACK;  // top of the highest Thai mark on the current base
   int32_t prevAdvanceFP = 0;  // 12.4 fixed-point: prev glyph's advance + next kern for snap
 
   if (fontCacheManager_ && fontCacheManager_->isScanning()) {
@@ -755,6 +758,34 @@ void GfxRenderer::drawText(const int fontId, const int x, const int y, const cha
     if (utf8IsCombiningMark(cp) || BidiUtils::isTransparentMark(cp)) {
       const EpdGlyph* combiningGlyph = font.getGlyph(cp, style);
       if (!combiningGlyph) continue;
+      const auto thaiKind = thaiMark::kindOf(cp);
+      if (thaiKind != thaiMark::Kind::None) {
+        int stackTop = thaiStackTop;
+        if (thaiKind == thaiMark::Kind::Tone) {
+          // A tone mark typed before SARA AM must clear the ring SARA AM draws over the base.
+          const auto* peek = reinterpret_cast<const uint8_t*>(textCursor);
+          uint32_t next;
+          while ((next = utf8NextCodepoint(&peek)) && utf8IsThaiMark(next)) {
+          }
+          if (next == 0x0E33) {
+            EpdGlyph amFallback;
+            if (const EpdGlyph* am = font.getGlyphMetrics(next, amFallback, style)) {
+              stackTop = std::max(stackTop, static_cast<int>(am->top));
+            }
+          }
+        }
+        const thaiMark::Box base{lastBaseLeft, lastBaseWidth, lastBaseTop, lastBaseHeight};
+        const thaiMark::Box mark{combiningGlyph->left, combiningGlyph->width, combiningGlyph->top,
+                                 combiningGlyph->height};
+        const auto placed = thaiMark::place(thaiKind, lastBaseCp, lastBaseX, base,
+                                            lastBaseX + fp4::toPixel(prevAdvanceFP), mark, stackTop,
+                                            combiningMark::MIN_GAP_PX);
+        renderCharImpl<TextRotation::None>(*this, renderMode, font, cp, placed.x, yPos - placed.raise, black, style);
+        if (thaiKind != thaiMark::Kind::Below) {
+          thaiStackTop = std::max(thaiStackTop, combiningGlyph->top + placed.raise);
+        }
+        continue;
+      }
       const auto anchor = combiningMark::anchorFor(cp);
       const int raiseBy =
           combiningMark::raiseAboveBase(anchor, combiningGlyph->top, combiningGlyph->height, lastBaseTop);
@@ -786,6 +817,9 @@ void GfxRenderer::drawText(const int fontId, const int x, const int y, const cha
     lastBaseLeft = glyph ? glyph->left : 0;
     lastBaseWidth = glyph ? glyph->width : 0;
     lastBaseTop = glyph ? glyph->top : 0;
+    lastBaseHeight = glyph ? glyph->height : 0;
+    lastBaseCp = cp;
+    thaiStackTop = thaiMark::NO_STACK;
     prevAdvanceFP = glyph ? glyph->advanceX : 0;  // 12.4 fixed-point
 
     const bool isSupSub = (style & (EpdFontFamily::SUP | EpdFontFamily::SUB)) != 0;
