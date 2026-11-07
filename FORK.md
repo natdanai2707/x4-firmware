@@ -95,14 +95,18 @@ Study > Compound > Sync now joins WiFi, downloads `index.txt` and any new
 briefs from the feed into `/compound/`, and removes briefs that left the feed.
 Tap a brief to read it in the normal EPUB reader (dictionary, bookmarks).
 
-Device setup: `/compound/feed.txt`
+Device setup: copy `data/compound-feed.txt` to `/compound/feed.txt`. It
+points at the public feed repo:
 
     url=https://raw.githubusercontent.com/natdanai2707/compound-feed/main/feed/
-    token=<GitHub token with read access, only for a private repo>
 
-Publishing: each Compound scheduled task runs
-`tools/compound/compound_epub.py <brief.json> <doc_id> feed/` in the feed
-repo and pushes. The feed keeps the newest 30 briefs. Thai translations are
+(For a private feed add a line `token=<GitHub token with read access>`.)
+
+Publishing: the three Compound scheduled tasks (Morning Market News, Daily
+Econ Brief, Idea on Demand) run `tools/publish.sh` in
+[compound-feed](https://github.com/natdanai2707/compound-feed) after each
+brief. `tools/compound/compound_epub.py` here is a copy of the feed repo's
+builder. The feed keeps the newest 30 briefs. Thai translations are
 left out until Thai rendering works (`--thai` adds them).
 
 ## Local changes vs upstream

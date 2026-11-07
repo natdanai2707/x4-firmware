@@ -16,9 +16,21 @@ import os
 import sys
 import uuid
 import zipfile
-from datetime import datetime, timezone
 
 INDEX = "index.txt"
+
+
+def sort_key(row):
+    """created_at in UTC (briefs mix +00:00 and +07:00); falls back to the date."""
+    from datetime import datetime, timezone
+    try:
+        t = datetime.fromisoformat(row[4].replace("Z", "+00:00"))
+        if t.tzinfo is None:
+            t = t.replace(tzinfo=timezone.utc)
+        return t.astimezone(timezone.utc).isoformat()
+    except (ValueError, IndexError):
+        return (row[2] or "") + "T00:00:00+00:00"
+FIXED_TIME = (1980, 1, 1, 0, 0, 0)
 
 
 def esc(text):
@@ -115,7 +127,8 @@ td{padding:.15em .3em;border-bottom:1px solid #999}
 def build_epub(b, doc_id, path, thai):
     title = b.get("title_en") or doc_id
     book_id = "urn:uuid:" + str(uuid.uuid5(uuid.NAMESPACE_URL, "compound/" + doc_id))
-    modified = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    # Derived from the brief, so rebuilding an unchanged brief gives identical bytes.
+    modified = (str(b.get("date") or "1980-01-01")[:10]) + "T00:00:00Z"
     xhtml = ('<?xml version="1.0" encoding="utf-8"?>\n<!DOCTYPE html>\n'
              '<html xmlns="http://www.w3.org/1999/xhtml" xml:lang="en" lang="en"><head>'
              f'<title>{esc(title)}</title><link rel="stylesheet" type="text/css" href="style.css"/></head>'
@@ -155,11 +168,11 @@ def build_epub(b, doc_id, path, thai):
                  "</rootfiles></container>\n")
     tmp = path + ".tmp"
     with zipfile.ZipFile(tmp, "w") as z:
-        z.writestr(zipfile.ZipInfo("mimetype"), "application/epub+zip", compress_type=zipfile.ZIP_STORED)
+        z.writestr(zipfile.ZipInfo("mimetype", FIXED_TIME), "application/epub+zip", compress_type=zipfile.ZIP_STORED)
         for name, data in [("META-INF/container.xml", container), ("OEBPS/content.opf", opf),
                            ("OEBPS/nav.xhtml", nav), ("OEBPS/toc.ncx", ncx), ("OEBPS/style.css", CSS),
                            ("OEBPS/brief.xhtml", xhtml)]:
-            z.writestr(name, data, compress_type=zipfile.ZIP_DEFLATED)
+            z.writestr(zipfile.ZipInfo(name, FIXED_TIME), data, compress_type=zipfile.ZIP_DEFLATED)
     os.replace(tmp, path)
 
 
@@ -196,7 +209,7 @@ def main():
     title = " ".join(str(b.get("title_en") or doc_id).split())
     row = [epub_name, b.get("type", ""), b.get("date", ""), title, b.get("created_at", "")]
     rows = [r for r in read_index(feed_dir) if r[0] != epub_name] + [row]
-    rows.sort(key=lambda r: (r[4] or r[2]), reverse=True)
+    rows.sort(key=sort_key, reverse=True)
     kept, dropped = rows[:keep], rows[keep:]
     for r in dropped:
         try:
