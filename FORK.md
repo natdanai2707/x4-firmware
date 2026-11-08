@@ -76,6 +76,13 @@ show on the back (meaning, then example, then Thai). Lines starting with `#`
 are comments. Add new cards at the end only: progress in `/study/<deck>.srs`
 is matched by card order.
 
+The Chinese deck is Surf's SpoonfedChinese Simplified deck from AnkiDroid
+(8,017 sentences; Hanzi, pinyin, English), with the review progress of
+Anki's "Card 1" (Chinese to English) in `chinese.srs`. Convert another Anki
+export (.apkg or .colpkg) with:
+`python3 tools/study/anki_to_deck.py <file> data/study --name chinese --deck <part of name> --fields Hanzi,Pinyin,English`
+then rebuild the font with `make_study_font.py` so it covers the new characters.
+
 Each session: due reviews first (max 100), then up to 10 new cards per day.
 Grades: Again (see it again this session), Good, Easy. Progress saves after
 every answer. Thai fields are hidden until Thai rendering is done.
@@ -95,7 +102,7 @@ Copy from `data/`:
 
 | SD card path | From | For |
 |---|---|---|
-| `/study/vocab.tsv`, `/study/chinese.tsv` | `data/study/` | Study decks |
+| `/study/vocab.tsv`, `/study/chinese.tsv`, `/study/chinese.srs` | `data/study/` | Study decks (+ Anki progress) |
 | `/study/font.ttf` | `data/study/font.ttf` | Chinese on cards |
 | `/study/thai.ttf` | `data/study/thai.ttf` | Thai meanings on cards |
 | `/compound/feed.txt` | `data/compound-feed.txt` | Compound sync |
