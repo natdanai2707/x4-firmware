@@ -13,6 +13,7 @@
 #include "activities/ActivityManager.h"
 #include "activities/study/CompoundActivity.h"
 #include "activities/study/StudySessionActivity.h"
+#include "activities/study/TrainingActivity.h"
 #include "components/UITheme.h"
 #include "components/icons/blocks.h"
 #include "components/icons/bookmark.h"
@@ -44,7 +45,7 @@ constexpr Tile TILES[] = {
     {"Compound", "Daily brief", PixelCompoundIcon},
     {"IELTS", "Vocab review", PixelVocabIcon},
     {"Chinese", "Hanzi review", PixelChineseIcon},
-    {"Library", "All books", PixelLibraryIcon},
+    {"Training", "Run, gym, grip", PixelTrainIcon},
 };
 constexpr Tile TOOLS[] = {
     {"Browse Files", nullptr, FolderIcon},
@@ -149,9 +150,9 @@ void LauncherActivity::openApp(const App app) {
     case App::Continue:
       if (!bookPath.empty()) activityManager.goToReader(bookPath);
       return;
-    case App::Library:
-      activityManager.goToLibrary();
-      return;
+    case App::Training:
+      screen = makeUniqueNoThrow<TrainingActivity>(renderer, mappedInput);
+      break;
     case App::Compound:
       screen = makeUniqueNoThrow<CompoundActivity>(renderer, mappedInput);
       break;

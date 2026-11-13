@@ -126,7 +126,7 @@ works for English books, and it lets the menus and Compound briefs show Thai.
 ## Home
 
 Home shows the clock, a Continue reading card and app tiles (Compound,
-IELTS, Chinese, Library). A tile opens its app directly. Swipe in from the
+IELTS, Chinese, Training). A tile opens its app directly. Swipe in from the
 right edge, or press Back, for the device menu: Browse Files, Library, File
 Transfer (USB, WiFi), Settings. `src/activities/home/LauncherActivity.*`
 replaces the list home; `HomeActivity` is no longer used.
@@ -155,9 +155,34 @@ Publishing: the Compound scheduled tasks run `tools/publish.sh` in
 brief; it writes an EPUB and a `.cb` file per brief. `tools/compound/compound_epub.py`
 here is a copy of the feed repo's builder. The feed keeps the newest 30 briefs.
 
+## Training
+
+The Training app (`src/activities/study/TrainingActivity.*`,
+`TrainingLogActivity.*`, `src/study/Training.*`) is the device version of the
+Training Hub phone app. Both use the Notion "Sessions" database of
+"10k Plan: Block 1", so phone and device stay in step.
+
+- Today: week strip and the sessions of the chosen day. Tap a session to log
+  status, distance, pace, average HR, RPE and a note.
+- Gym: Push, Legs, Pull. Tick sets, change loads with - and +. A ticked set
+  shows when the rest ends. Save creates a session in Notion; Legs fills in the
+  week's planned Strength session instead.
+- Grip: the grip work of each weekday, saved the same way.
+
+Logs go into `/.crosspoint/training/outbox.tsv` first and are sent on the next
+sync, so a workout without WiFi is not lost. Sync sends the outbox, then pulls
+the sessions from last week to two weeks ahead. It runs on open when the last
+sync is more than an hour old or logs are waiting, and after each save, when a
+WiFi network is saved. Loads and ticked sets are kept on the card.
+
+Setup: create a Notion integration, connect it to the "10k Plan: Block 1" page
+and save its key as `notion.txt` on the card root (just the key, or
+`token=<key>`). It moves to `/.crosspoint/training/notion.txt` on first use.
+Notion writes it rejects as invalid go to `/.crosspoint/training/rejected.tsv`.
+
 ## Local changes vs upstream
 
-- `src/study/`, `src/activities/study/`: Study hub, SRS scheduler, deck store, study fonts, session screen, Compound sync.
+- `src/study/`, `src/activities/study/`: Study hub, SRS scheduler, deck store, study fonts, session screen, Compound sync, Training app and Notion sync.
 - `lib/Utf8/Utf8.h`, `lib/EpdFont/`, `lib/GfxRenderer/GfxRenderer.cpp`: Thai marks.
 - `lib/Epub/Epub/ThaiSegmenter.*`, `ThaiDictionaryStore.*`, `ParsedText.cpp`, `Section.cpp` (cache v74): Thai line breaking.
 - `src/activities/home/LauncherActivity.*`, `ActivityManager.cpp`: app-style Home with a right-edge device menu.

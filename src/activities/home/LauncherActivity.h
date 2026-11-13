@@ -5,7 +5,7 @@
 
 #include "activities/Activity.h"
 
-// App-style home: clock, a Continue reading card and a grid of study apps
+// App-style home: clock, a Continue reading card and a grid of apps
 // that open directly. Device tools (Browse Files, Library, File Transfer,
 // Settings) live in a drawer that slides in from the right edge; the Back
 // button also opens and closes it.
@@ -18,7 +18,7 @@ class LauncherActivity final : public Activity {
   bool isHomeActivity() const override { return true; }
 
  private:
-  enum class App : uint8_t { Continue, Compound, Vocab, Chinese, Library };
+  enum class App : uint8_t { Continue, Compound, Vocab, Chinese, Training };
   enum class Tool : uint8_t { Files, Library, Transfer, Settings };
   static constexpr int APP_COUNT = 5;  // Continue card + 4 tiles
   static constexpr int TOOL_COUNT = 4;
