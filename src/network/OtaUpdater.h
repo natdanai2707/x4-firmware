@@ -9,6 +9,7 @@ class OtaUpdater {
   size_t otaSize = 0;
   size_t processedSize = 0;
   size_t totalSize = 0;
+  std::string errorDetail;
 
  public:
   using ProgressCallback = void (*)(void* ctx);
@@ -33,6 +34,8 @@ class OtaUpdater {
   OtaUpdater() = default;
   bool isUpdateNewer() const;
   const std::string& getLatestVersion() const;
+  // Which step failed and why, for the failure screen; empty when unknown.
+  const std::string& getErrorDetail() const { return errorDetail; }
   OtaUpdaterError checkForUpdate();
   OtaUpdaterError installUpdate(ProgressCallback onProgress = nullptr, void* ctx = nullptr);
 };

@@ -26,6 +26,7 @@ constexpr char latestReleaseUrl[] = "https://api.github.com/repos/natdanai2707/x
 }  // namespace
 
 OtaUpdater::OtaUpdaterError OtaUpdater::checkForUpdate() {
+  errorDetail.clear();
   LOG_DBG("OTA", "Checking for update (current: %s)", CROSSPOINT_VERSION);
 
   // Stream the ~32KB release JSON straight into the parser as it arrives.
@@ -67,6 +68,7 @@ OtaUpdater::OtaUpdaterError OtaUpdater::checkForUpdate() {
   });
   if (!ok) {
     LOG_ERR("OTA", "Release check fetch failed");
+    errorDetail = "Release check failed (HTTP " + std::to_string(HttpDownloader::lastStatus()) + ")";
     return HTTP_ERROR;
   }
 
@@ -75,6 +77,7 @@ OtaUpdater::OtaUpdaterError OtaUpdater::checkForUpdate() {
 
   if (!releaseParser.foundTag()) {
     LOG_ERR("OTA", "No tag_name in release JSON");
+    errorDetail = "Release check: no version found";
     return JSON_PARSE_ERROR;
   }
 
@@ -149,6 +152,8 @@ OtaUpdater::OtaUpdaterError OtaUpdater::installUpdate(ProgressCallback onProgres
   // next OTA slot and switch otadata (firmware_flash). esp_ota_end() and
   // esp_ota_set_boot_partition() run esp_image_verify, which rejected our image.
   constexpr char kCachePath[] = "/.crosspoint/ota-update.bin";
+  constexpr char kKeepPath[] = "/crosspoint-update.bin";
+  errorDetail.clear();
   Storage.ensureDirectoryExists("/.crosspoint");
   processedSize = 0;
   int lastReportedPct = -1;
@@ -165,6 +170,8 @@ OtaUpdater::OtaUpdaterError OtaUpdater::installUpdate(ProgressCallback onProgres
   });
   if (dl != HttpDownloader::OK) {
     LOG_ERR("OTA", "Firmware download failed (HTTP %d)", HttpDownloader::lastStatus());
+    errorDetail = "Download failed: error " + std::to_string(static_cast<int>(dl)) + ", HTTP " +
+                  std::to_string(HttpDownloader::lastStatus()) + ", " + std::to_string(processedSize / 1024) + " KB";
     Storage.remove(kCachePath);
     return HTTP_ERROR;
   }
@@ -173,17 +180,24 @@ OtaUpdater::OtaUpdaterError OtaUpdater::installUpdate(ProgressCallback onProgres
   const auto valid = firmware_flash::validateImageFile(kCachePath, updatePartition ? updatePartition->size : 0);
   if (valid != firmware_flash::Result::OK) {
     LOG_ERR("OTA", "Downloaded image invalid: %s", firmware_flash::resultName(valid));
+    errorDetail = std::string("Downloaded file invalid: ") + firmware_flash::resultName(valid);
     Storage.remove(kCachePath);
     return valid == firmware_flash::Result::WRONG_BOARD || valid == firmware_flash::Result::BAD_CHIP
                ? WRONG_DEVICE_ERROR
                : INTERNAL_UPDATE_ERROR;
   }
   const auto flashed = firmware_flash::flashFromSdPath(kCachePath, nullptr, nullptr, true);
-  Storage.remove(kCachePath);
   if (flashed != firmware_flash::Result::OK) {
     LOG_ERR("OTA", "Flash failed: %s", firmware_flash::resultName(flashed));
+    // The download is valid: keep it so SD Card Firmware Update can install it.
+    Storage.remove(kKeepPath);
+    const bool kept = Storage.rename(kCachePath, kKeepPath);
+    if (!kept) Storage.remove(kCachePath);
+    errorDetail = std::string("Flash failed: ") + firmware_flash::resultName(flashed) +
+                  (kept ? ". Install /crosspoint-update.bin with SD Card Firmware Update" : "");
     return INTERNAL_UPDATE_ERROR;
   }
+  Storage.remove(kCachePath);
 
   LOG_INF("OTA", "Update completed");
   return OK;

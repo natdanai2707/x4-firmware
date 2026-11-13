@@ -41,6 +41,7 @@ void OtaUpdateActivity::onWifiSelectionComplete(const bool success) {
     LOG_DBG("OTA", "Update check failed: %d", res);
     {
       RenderLock lock(*this);
+      failedDetail = updater.getErrorDetail();
       state = FAILED;
     }
     return;
@@ -155,8 +156,14 @@ void OtaUpdateActivity::render(RenderLock&&) {
     GUI.drawButtonHints(renderer, labels.btn1, labels.btn2, labels.btn3, labels.btn4);
   } else if (state == FAILED) {
     renderer.drawCenteredText(UI_10_FONT_ID, top, tr(STR_UPDATE_FAILED), true, EpdFontFamily::BOLD);
-    if (failedDetail != nullptr) {
-      renderer.drawCenteredText(UI_10_FONT_ID, top + height + metrics.verticalSpacing, failedDetail);
+    if (!failedDetail.empty()) {
+      // The detail names the failing step; it can run to a few lines.
+      int ly = top + height + metrics.verticalSpacing;
+      for (const auto& line : renderer.wrappedText(UI_10_FONT_ID, failedDetail.c_str(),
+                                                   renderer.getScreenWidth() - 2 * metrics.contentSidePadding, 4)) {
+        renderer.drawCenteredText(UI_10_FONT_ID, ly, line.c_str());
+        ly += renderer.getLineHeight(UI_10_FONT_ID);
+      }
     }
     const auto labels = mappedInput.mapLabels(tr(STR_BACK), "", "", "");
     GUI.drawButtonHints(renderer, labels.btn1, labels.btn2, labels.btn3, labels.btn4);
@@ -192,7 +199,8 @@ void OtaUpdateActivity::runUpdateInstall() {
     LOG_DBG("OTA", "Update failed: %d", res);
     {
       RenderLock lock(*this);
-      failedDetail = res == OtaUpdater::WRONG_DEVICE_ERROR ? tr(STR_FIRMWARE_WRONG_DEVICE) : nullptr;
+      failedDetail =
+          res == OtaUpdater::WRONG_DEVICE_ERROR ? std::string(tr(STR_FIRMWARE_WRONG_DEVICE)) : updater.getErrorDetail();
       state = FAILED;
     }
     requestUpdate();
