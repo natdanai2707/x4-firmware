@@ -162,9 +162,11 @@ The Training app (`src/activities/study/TrainingActivity.*`,
 Training Hub phone app. Both use the Notion "Sessions" database of
 "10k Plan: Block 1", so phone and device stay in step.
 
-- Today: week strip and the sessions of the chosen day. Tap a session to log
+- The app opens on a picker: Run, Gym, Grip, Hyrox. It does not use WiFi;
+  only Run syncs on open. Back from a tab returns to the picker.
+- Run: week strip and the sessions of the chosen day. Tap a session to log
   status, distance, pace, average HR, RPE and a note.
-- Gym: Push, Legs, Pull. Tick sets, change loads with - and +. A ticked set
+- Gym: Push, Legs, Pull (no one-arm row). Tick sets, change loads with - and +. A ticked set
   shows when the rest ends. Save creates a session in Notion; Legs fills in the
   week's planned Strength session instead.
 - Grip: the grip work of each weekday, saved the same way.
@@ -174,7 +176,7 @@ Training Hub phone app. Both use the Notion "Sessions" database of
 
 Logs go into `/.crosspoint/training/outbox.tsv` first and are sent on the next
 sync, so a workout without WiFi is not lost. Sync sends the outbox, then pulls
-the sessions from last week to two weeks ahead. It runs on open when the last
+the sessions from last week to two weeks ahead. It runs when Run opens and the last
 sync is more than an hour old or logs are waiting, and after each save, when a
 WiFi network is saved. Loads and ticked sets are kept on the card.
 

@@ -58,7 +58,6 @@ constexpr Exercise LEGS[] = {
 constexpr Exercise PULL[] = {
     {"pullup", "Pull-up or lat pulldown", "4 x 6-10", 4, "kg", 0, 120},
     {"csrow", "Chest-supported row", "4 x 8-10", 4, "kg", 40, 90},
-    {"dbrow", "One-arm dumbbell row", "3 x 10 per side", 3, "kg", 24, 60},
     {"face", "Face pull", "3 x 15", 3, "kg", 15, 60},
     {"inccurl", "Incline dumbbell curl", "3 x 8-12", 3, "kg", 9, 60},
     {"hamcurl", "Hammer curl (heavy)", "3 x 8-10", 3, "kg", 12, 60},
@@ -66,7 +65,7 @@ constexpr Exercise PULL[] = {
 constexpr LiftDay GYM[] = {
     {"push", "Push", "Push", 1, nullptr, PUSH, 6},
     {"legs", "Legs", "Strength", 3, nullptr, LEGS, 6},
-    {"pull", "Pull", "Pull", 5, nullptr, PULL, 6},
+    {"pull", "Pull", "Pull", 5, nullptr, PULL, 5},
 };
 
 constexpr Exercise GRIP_MON[] = {{"wrist", "Wrist curl", "5 x 15-25", 5, "kg", 5, 60}};

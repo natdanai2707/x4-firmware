@@ -7,7 +7,9 @@
 #include "activities/Activity.h"
 #include "study/Training.h"
 
-// Training on the device, so a workout does not need the phone. Same plan and
+// Training on the device, so a workout does not need the phone. It opens on a
+// picker (Run, Gym, Grip, Hyrox) that does not touch WiFi; only Run syncs on
+// open. Same plan and
 // same Notion "Sessions" database as the Training Hub phone app:
 //   Today  the week around today from Notion; a run is logged in
 //          TrainingLogActivity (status, km, pace, HR, RPE, notes).
@@ -68,6 +70,8 @@ class TrainingActivity final : public Activity {
   void renderToday(int y);
   void renderLift(int y);
   void renderTabBar();
+  void renderPicker();
+  void pick(int index);
 
   std::vector<training::Session> sessions;
   std::string todayIso;
@@ -75,6 +79,9 @@ class TrainingActivity final : public Activity {
   std::string syncStatus;
   bool syncing = false;
   bool syncPending = false;
+  bool syncDue = false;  // sync when Run opens; the picker never connects
+  bool picking = true;   // the Run / Gym / Grip / Hyrox picker is showing
+  int pickSel = 0;
   bool swallowBack = false;
   Tab tab = Tab::Today;
   Lift gym;

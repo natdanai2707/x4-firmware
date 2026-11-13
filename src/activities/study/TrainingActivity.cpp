@@ -33,7 +33,7 @@ constexpr int BOX_GAP = 8;
 constexpr int STEP_W = 44;
 constexpr int LOAD_W = 84;
 constexpr int SAVE_H = 52;
-constexpr const char* TAB_NAMES[] = {"Today", "Gym", "Grip", "Hyrox"};
+constexpr const char* TAB_NAMES[] = {"Run", "Gym", "Grip", "Hyrox"};
 constexpr const char* DAYS[] = {"Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"};
 constexpr const char* DAY_LETTER[] = {"S", "M", "T", "W", "T", "F", "S"};
 constexpr const char* MONTHS[] = {"Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"};
@@ -116,7 +116,7 @@ void TrainingActivity::onEnter() {
     const time_t lastSync = static_cast<time_t>(std::atoll(last.c_str()));
     const time_t now = time(nullptr);
     syncStatus = pending > 0 ? std::to_string(pending) + " to send" : "Tap to sync";
-    syncPending = wifiSaved() && (pending > 0 || sessions.empty() || now - lastSync > RESYNC_SECONDS);
+    syncDue = wifiSaved() && (pending > 0 || sessions.empty() || now - lastSync > RESYNC_SECONDS);
   }
   requestUpdate();
 }
@@ -149,6 +149,11 @@ void TrainingActivity::setTab(const Tab t) {
   {
     RenderLock lock(*this);
     tab = t;
+    picking = false;
+    if (t == Tab::Today && syncDue) {
+      syncDue = false;
+      syncPending = true;
+    }
   }
   requestUpdate();
 }
@@ -477,8 +482,39 @@ void TrainingActivity::loop() {
     }
     if (!mappedInput.isPressed(B::Back)) swallowBack = false;
   }
+  if (picking) {
+    if (mappedInput.wasReleased(B::Back)) {
+      finish();
+      return;
+    }
+    const auto move = [&](int d) {
+      {
+        RenderLock lock(*this);
+        pickSel = (pickSel + d + TAB_COUNT) % TAB_COUNT;
+      }
+      requestUpdate();
+    };
+    if (mappedInput.wasReleased(B::Right)) return move(1);
+    if (mappedInput.wasReleased(B::Left)) return move(-1);
+    if (mappedInput.wasReleased(B::Down) || mappedInput.wasReleased(B::PageForward)) return move(2);
+    if (mappedInput.wasReleased(B::Up) || mappedInput.wasReleased(B::PageBack)) return move(-2);
+    if (mappedInput.wasReleased(B::Confirm)) return pick(pickSel);
+    int tx = 0;
+    int ty = 0;
+    if (!mappedInput.wasScreenTapped(tx, ty)) return;
+    for (const auto& h : hits) {
+      if (tx >= h.x0 && tx < h.x1 && ty >= h.y0 && ty < h.y1 && h.kind == GoTab) return pick(h.a);
+    }
+    return;
+  }
+  // Back from a tab returns to the picker.
   if (mappedInput.wasReleased(B::Back)) {
-    finish();
+    {
+      RenderLock lock(*this);
+      picking = true;
+      pickSel = static_cast<int>(tab);
+    }
+    requestUpdate();
     return;
   }
   if (mappedInput.wasReleased(B::Right)) return setTab(static_cast<Tab>((static_cast<int>(tab) + 1) % TAB_COUNT));
@@ -587,8 +623,13 @@ void TrainingActivity::render(RenderLock&&) {
   GUI.drawHeader(renderer, Rect{0, m.topPadding, w, m.headerHeight}, "TRAINING.",
                  right.empty() ? nullptr : right.c_str());
 
+  if (picking) {
+    renderPicker();
+    renderer.displayBuffer();
+    return;
+  }
   int y = contentTop();
-  std::string title = TAB_NAMES[static_cast<int>(tab)];
+  std::string title = tab == Tab::Today ? "Today" : TAB_NAMES[static_cast<int>(tab)];
   if (tab == Tab::Today && !dayIso.empty() && dayIso != todayIso) title = dayTitle(dayIso);
   renderStatusLine(y, title.c_str());
   y += renderer.getLineHeight(NOTOSANS_18_FONT_ID) + GAP;
@@ -599,6 +640,66 @@ void TrainingActivity::render(RenderLock&&) {
   }
   renderTabBar();
   renderer.displayBuffer();
+}
+
+void TrainingActivity::pick(const int index) { setTab(static_cast<Tab>(std::max(0, std::min(index, TAB_COUNT - 1)))); }
+
+void TrainingActivity::renderPicker() {
+  const auto& m = UITheme::getInstance().getMetrics();
+  const int w = renderer.getScreenWidth();
+  const int pad = m.contentSidePadding;
+  const int width = w - 2 * pad;
+  const int smallH = renderer.getLineHeight(SMALL_FONT_ID);
+  int y = contentTop();
+  const std::string heading = todayIso.empty() ? "Training" : dayTitle(todayIso);
+  renderer.drawText(NOTOSANS_18_FONT_ID, pad, y, heading.c_str(), true, EpdFontFamily::BOLD);
+  y += renderer.getLineHeight(NOTOSANS_18_FONT_ID) + GAP;
+
+  // What today's plan says for each choice.
+  std::string run = "Rest day";
+  for (const size_t i : sessionsOn(todayIso)) {
+    if (sessions[i].isRun()) {
+      run = sessions[i].title;
+      break;
+    }
+  }
+  const int wd = todayIso.empty() ? -1 : training::weekday(todayIso);
+  std::string gymText = "Push, Legs, Pull";
+  int n = 0;
+  const auto* gymDays = training::gymDays(n);
+  for (int i = 0; i < n; ++i) {
+    if (gymDays[i].dow == wd) gymText = std::string(gymDays[i].label) + " day";
+  }
+  const auto* gripToday = training::gripDay(wd);
+  const std::string gripText = gripToday ? gripToday->ex[0].name : "Mon to Fri";
+  const std::string subs[TAB_COUNT] = {run, gymText, gripText, "30 or 45 min"};
+
+  const int pending = training::pendingCount();
+  const int footH = pending > 0 ? smallH + GAP : 0;
+  const int gap = 14;
+  const int tileW = (width - gap) / 2;
+  const int tileH = std::min(tileW, (tabBarTop() + TAB_BAR_HEIGHT - y - footH - gap) / 2);
+  for (int i = 0; i < TAB_COUNT; ++i) {
+    const int x = pad + (i % 2) * (tileW + gap);
+    const int ty = y + (i / 2) * (tileH + gap);
+    const bool sel = i == pickSel;
+    renderer.drawRoundedRect(x, ty, tileW, tileH, sel ? 4 : 1, 16, true);
+    const int nameH = renderer.getLineHeight(NOTOSANS_18_FONT_ID);
+    const auto lines = renderer.wrappedText(SMALL_FONT_ID, subs[i].c_str(), tileW - 2 * INSET, 2);
+    const int blockH = nameH + 6 + static_cast<int>(lines.size()) * smallH;
+    int cy = ty + (tileH - blockH) / 2;
+    drawCentered(renderer, NOTOSANS_18_FONT_ID, x, cy, tileW, nameH, TAB_NAMES[i], true, EpdFontFamily::BOLD);
+    cy += nameH + 6;
+    for (const auto& l : lines) {
+      drawCentered(renderer, SMALL_FONT_ID, x, cy, tileW, smallH, l.c_str(), true);
+      cy += smallH;
+    }
+    hits.push_back({x, ty, x + tileW, ty + tileH, GoTab, i, 0});
+  }
+  if (pending > 0) {
+    const std::string note = std::to_string(pending) + " log(s) waiting for Notion. Open Run to send.";
+    renderer.drawText(SMALL_FONT_ID, pad, y + 2 * tileH + gap + GAP, note.c_str());
+  }
 }
 
 void TrainingActivity::renderStatusLine(const int y, const char* title) {
