@@ -131,6 +131,9 @@ TEST(ReleaseJsonParser, RealisticPrettyPrinted) {
   EXPECT_STREQ(p.getTagName(), "v2.4.1");
   EXPECT_STREQ(p.getFirmwareUrl(),
                "https://github.com/crosspoint-reader/crosspoint-reader/releases/download/v2.4.1/firmware.bin");
+  // The asset's own API URL, not the release's or the uploader's.
+  EXPECT_STREQ(p.getFirmwareApiUrl(),
+               "https://api.github.com/repos/crosspoint-reader/crosspoint-reader/releases/assets/100002");
   EXPECT_EQ(p.getFirmwareSize(), 1572864u);
 }
 

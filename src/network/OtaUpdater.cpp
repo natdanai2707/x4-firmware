@@ -88,6 +88,7 @@ OtaUpdater::OtaUpdaterError OtaUpdater::checkForUpdate() {
 
   latestVersion = releaseParser.getTagName();
   otaUrl = releaseParser.getFirmwareUrl();
+  otaApiUrl = releaseParser.getFirmwareApiUrl();
   otaSize = releaseParser.getFirmwareSize();
   totalSize = otaSize;
   updateAvailable = true;
@@ -157,7 +158,7 @@ OtaUpdater::OtaUpdaterError OtaUpdater::installUpdate(ProgressCallback onProgres
   Storage.ensureDirectoryExists("/.crosspoint");
   processedSize = 0;
   int lastReportedPct = -1;
-  const auto dl = HttpDownloader::downloadToFile(otaUrl, kCachePath, [&](size_t done, size_t total) {
+  const auto progress = [&](size_t done, size_t total) {
     processedSize = done;
     if (total > 0) totalSize = total;
     if (onProgress && totalSize > 0) {
@@ -167,7 +168,15 @@ OtaUpdater::OtaUpdaterError OtaUpdater::installUpdate(ProgressCallback onProgres
         onProgress(ctx);
       }
     }
-  });
+  };
+  // Prefer the API asset URL: github.com answers the browser URL with a
+  // Content-Security-Policy header longer than the HTTP client's 4 KB header
+  // line limit, so that request fails before any byte arrives. The API
+  // redirect carries small headers. The Accept header stays on api.github.com.
+  const bool viaApi = !otaApiUrl.empty();
+  const std::vector<HttpDownloader::Header> apiHeaders = {{"Accept", "application/octet-stream"}};
+  const auto dl = HttpDownloader::downloadToFile(viaApi ? otaApiUrl : otaUrl, kCachePath, progress, nullptr, "", "",
+                                                 viaApi ? apiHeaders : std::vector<HttpDownloader::Header>{});
   if (dl != HttpDownloader::OK) {
     LOG_ERR("OTA", "Firmware download failed (HTTP %d)", HttpDownloader::lastStatus());
     errorDetail = "Download failed: error " + std::to_string(static_cast<int>(dl)) + ", HTTP " +
