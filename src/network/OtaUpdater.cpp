@@ -19,7 +19,8 @@
 #include "FirmwareFlasher.h"
 
 namespace {
-constexpr char latestReleaseUrl[] = "https://api.github.com/repos/crosspoint-reader/crosspoint-reader/releases/latest";
+// x4-firmware: update from this fork's releases, never from upstream CrossPoint.
+constexpr char latestReleaseUrl[] = "https://api.github.com/repos/natdanai2707/x4-firmware/releases/latest";
 }  // namespace
 
 OtaUpdater::OtaUpdaterError OtaUpdater::checkForUpdate() {

@@ -141,6 +141,8 @@ jobs:
       - name: Build ${{ matrix.env }} firmware
         run: |
           set -euo pipefail
+          # Each run gets its own version, so the device's WiFi update can tell builds apart.
+          sed -i "s/^version = .*/version = 2.1.${GITHUB_RUN_NUMBER}/" platformio.ini
           pio run -e ${{ matrix.env }} | tee pio.log
 
       - name: Extract firmware stats
@@ -162,6 +164,30 @@ jobs:
           name: ${{ matrix.asset }}
           path: .pio/build/${{ matrix.env }}/firmware.bin
           if-no-files-found: error
+
+  release:
+    # Settings > Check for updates on the device installs the latest release.
+    name: Publish release
+    needs: build
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v6
+        with:
+          name: firmware-x4pro.bin
+          path: dist
+      - name: Create release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          tag="2.1.${GITHUB_RUN_NUMBER}"
+          cp dist/firmware.bin "crosspoint-${tag}-x4pro.bin"
+          gh release create "$tag" "crosspoint-${tag}-x4pro.bin" \
+            --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" \
+            --title "$tag" --notes "Build of ${GITHUB_SHA::7}" --latest
 
   unit-tests:
     runs-on: ubuntu-latest
