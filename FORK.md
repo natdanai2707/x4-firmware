@@ -55,7 +55,7 @@ Before the first flash: back up the stock firmware with
 ## Roadmap
 
 1. [x] Fork + X4 Pro simulator build
-2. [x] Study hub on Home (Compound, IELTS/TOEFL, Chinese)
+2. [x] App-style Home: Continue reading, app tiles, device menu from the right edge
 3. [x] SRS engine shared by IELTS/TOEFL vocab and Chinese flashcards
 4. [x] Chinese font for study cards (`/study/font.ttf`)
 5. [x] Compound briefs synced over WiFi (feed setup below)
@@ -105,7 +105,6 @@ Copy from `data/`:
 | `/study/vocab.tsv`, `/study/chinese.tsv`, `/study/chinese.srs` | `data/study/` | Study decks (+ Anki progress) |
 | `/study/font.ttf` | `data/study/font.ttf` | Chinese on cards |
 | `/study/thai.ttf` | `data/study/thai.ttf` | Thai meanings on cards |
-| `/compound/feed.txt` | `data/compound-feed.txt` | Compound sync |
 | `/fonts/Sarabun/*.ttf` | `data/fonts/Sarabun/` | Thai + English reader font |
 | `/thai/words.dic` | `data/thai/words.dic` | Thai line breaking |
 
@@ -124,35 +123,45 @@ works for English books, and it lets the menus and Compound briefs show Thai.
 - Justified text stretches real spaces only, not the joins between Thai words.
 - Not covered: rotated (landscape) text uses the generic mark placement.
 
-## Compound feed
+## Home
 
-Study > Compound > Sync now joins WiFi, downloads `index.txt` and any new
-briefs from the feed into `/compound/`, and removes briefs that left the feed.
-Tap a brief to read it in the normal EPUB reader (dictionary, bookmarks).
+Home shows the clock, a Continue reading card and app tiles (Compound,
+IELTS, Chinese, Library). A tile opens its app directly. Swipe in from the
+right edge, or press Back, for the device menu: Browse Files, Library, File
+Transfer (USB, WiFi), Settings. `src/activities/home/LauncherActivity.*`
+replaces the list home; `HomeActivity` is no longer used.
 
-Device setup: copy `data/compound-feed.txt` to `/compound/feed.txt`. It
-points at the public feed repo:
+## Compound
+
+The Compound app reads briefs natively with tabs: Markets, News, Words for the
+morning news, and Idea, Words for case studies. Left/Right switch tabs,
+Up/Down and Next turn pages, taps on the tab bar or the screen halves work too.
+
+Sync downloads `index.txt` and the plain text `.cb` briefs into the hidden
+`/.crosspoint/compound/`, so briefs never show up in Library or Browse Files.
+Only today and the two days before are kept; older briefs are deleted on open
+and on sync. The first time the app opens each day after 07:00 it syncs by
+itself when a WiFi network is saved. Words of new briefs are appended to
+`/study/vocab.tsv` (IELTS deck), skipping words already in it. An old
+`/compound/` folder from earlier builds is removed on first open.
+
+The feed url is built in. `/.crosspoint/compound/feed.txt` can override it:
 
     url=https://raw.githubusercontent.com/natdanai2707/compound-feed/main/feed/
+    token=<GitHub token with read access, for a private feed>
 
-(For a private feed add a line `token=<GitHub token with read access>`.)
-
-Briefs include the Thai translation (needs the Sarabun reader font). Sync
-downloads new briefs and re-downloads any whose hash in `index.txt` changed.
-
-Publishing: the three Compound scheduled tasks (Morning Market News, Daily
-Econ Brief, Idea on Demand) run `tools/publish.sh` in
+Publishing: the Compound scheduled tasks run `tools/publish.sh` in
 [compound-feed](https://github.com/natdanai2707/compound-feed) after each
-brief. `tools/compound/compound_epub.py` here is a copy of the feed repo's
-builder. The feed keeps the newest 30 briefs. Thai translations are
-left out until Thai rendering works (`--thai` adds them).
+brief; it writes an EPUB and a `.cb` file per brief. `tools/compound/compound_epub.py`
+here is a copy of the feed repo's builder. The feed keeps the newest 30 briefs.
 
 ## Local changes vs upstream
 
 - `src/study/`, `src/activities/study/`: Study hub, SRS scheduler, deck store, study fonts, session screen, Compound sync.
 - `lib/Utf8/Utf8.h`, `lib/EpdFont/`, `lib/GfxRenderer/GfxRenderer.cpp`: Thai marks.
 - `lib/Epub/Epub/ThaiSegmenter.*`, `ThaiDictionaryStore.*`, `ParsedText.cpp`, `Section.cpp` (cache v74): Thai line breaking.
-- `src/activities/home/HomeActivity.*`: Study entry first on the list home.
+- `src/activities/home/LauncherActivity.*`, `ActivityManager.cpp`: app-style Home with a right-edge device menu.
+- `lib/LibraryIndex/LibraryBuilder.cpp`: the `study` folder is not scanned for books.
 - `platformio.ini`: added `simulator`, `simulator_x4_pro`, `simulator_x4_pro_mac` envs;
   libraries pulled from GitHub instead of the PlatformIO registry.
 - `tools/crosspoint-simulator/src/HalDisplay.h`, `HalStorage.h`: stubbed

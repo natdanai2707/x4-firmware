@@ -179,6 +179,49 @@ def build_epub(b, doc_id, path, thai):
     os.replace(tmp, path)
 
 
+def clean(text):
+    return " ".join(str(text or "").split())
+
+
+def build_cb(b, path):
+    """Plain text brief for the native Compound screen on the device.
+
+    One record per line, fields separated by TAB:
+      TYPE, DATE, TITLE en th, HOOK, NOTE, M label value change note,
+      CORE en th, S framework headline_en headline_th, EN, TH, IMP en th,
+      W term th explain example, Q followup.
+    """
+    out = []
+    def rec(*fields):
+        out.append("\t".join(clean(f) for f in fields))
+    rec("TYPE", b.get("type", ""))
+    rec("DATE", b.get("date", ""))
+    rec("TITLE", b.get("title_en", ""), b.get("title_th", ""))
+    if b.get("hook_en"):
+        rec("HOOK", b["hook_en"])
+    if b.get("snapshot_note"):
+        rec("NOTE", b["snapshot_note"])
+    for m in b.get("snapshot") or []:
+        rec("M", m.get("label", ""), m.get("value", ""), m.get("change", ""), m.get("note", ""))
+    core = b.get("core_idea") or {}
+    if core.get("en"):
+        rec("CORE", core.get("en", ""), core.get("th", ""))
+    for sec in b.get("sections") or []:
+        rec("S", sec.get("framework", ""), sec.get("headline_en", ""), sec.get("headline_th", ""))
+        if sec.get("en"):
+            rec("EN", sec["en"])
+        if sec.get("th"):
+            rec("TH", sec["th"])
+        if sec.get("impact_en"):
+            rec("IMP", sec["impact_en"], sec.get("impact_th", ""))
+    for t in b.get("terms") or []:
+        rec("W", t.get("en", ""), t.get("th", ""), t.get("explain_en", ""), t.get("example_en", ""))
+    for q in b.get("followups") or []:
+        rec("Q", q)
+    with open(path, "w", encoding="utf-8") as f:
+        f.write("\n".join(out) + "\n")
+
+
 def read_index(feed_dir):
     rows = []
     p = os.path.join(feed_dir, INDEX)
@@ -208,19 +251,24 @@ def main():
     os.makedirs(feed_dir, exist_ok=True)
     epub_name = doc_id + ".epub"
     build_epub(b, doc_id, os.path.join(feed_dir, epub_name), thai)
+    build_cb(b, os.path.join(feed_dir, doc_id + ".cb"))
 
     title = " ".join(str(b.get("title_en") or doc_id).split())
-    with open(os.path.join(feed_dir, epub_name), "rb") as f:
-        digest = hashlib.sha1(f.read()).hexdigest()[:12]
+    h = hashlib.sha1()
+    for name in (epub_name, doc_id + ".cb"):
+        with open(os.path.join(feed_dir, name), "rb") as f:
+            h.update(f.read())
+    digest = h.hexdigest()[:12]
     row = [epub_name, b.get("type", ""), b.get("date", ""), title, b.get("created_at", ""), digest]
     rows = [r for r in read_index(feed_dir) if r[0] != epub_name] + [row]
     rows.sort(key=sort_key, reverse=True)
     kept, dropped = rows[:keep], rows[keep:]
     for r in dropped:
-        try:
-            os.remove(os.path.join(feed_dir, r[0]))
-        except FileNotFoundError:
-            pass
+        for name in (r[0], r[0][:-5] + ".cb"):
+            try:
+                os.remove(os.path.join(feed_dir, name))
+            except FileNotFoundError:
+                pass
     with open(os.path.join(feed_dir, INDEX), "w", encoding="utf-8") as f:
         f.write("# Compound feed: file, type, date, title, created_at, hash (newest first)\n")
         for r in kept:

@@ -192,7 +192,8 @@ bool isHiddenOrSidecar(const std::string_view name) {
   for (const auto* item : FsHelpers::HIDDEN_ITEMS) {
     if (name == item) return true;
   }
-  return false;
+  // x4-firmware: study decks and their font licenses are not books.
+  return name == "study";
 }
 
 std::string stemOf(const std::string& name) {
