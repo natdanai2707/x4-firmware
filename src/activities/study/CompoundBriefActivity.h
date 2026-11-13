@@ -10,9 +10,9 @@
 
 // One Compound brief as a single article, laid out like the phone app's
 // reader: title, market snapshot or core idea, sections, key terms and
-// follow-up questions. Thai translations are hidden until shown, as in the
-// app. Down/Right/Next turn pages, Up/Left go back, Confirm shows or hides
-// Thai. Touch: right half next page, left half previous page.
+// follow-up questions. Each paragraph is followed by its Thai translation;
+// Confirm or the button under the title hides it. Down/Right/Next turn pages,
+// Up/Left go back. Touch: right half next page, left half previous page.
 class CompoundBriefActivity final : public Activity {
  public:
   CompoundBriefActivity(GfxRenderer& renderer, MappedInputManager& mappedInput, std::string path);
@@ -50,7 +50,7 @@ class CompoundBriefActivity final : public Activity {
   std::vector<Line> lines;
   std::vector<size_t> pageStarts;
   int page = 0;
-  bool showThai = false;
+  bool showThai = true;  // Thai under every paragraph unless hidden
   bool loaded = false;
   int toggleTop = -1;  // Thai button band on the current page, -1 when absent
   int toggleBottom = -1;
