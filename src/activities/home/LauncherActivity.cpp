@@ -18,6 +18,7 @@
 #include "components/icons/bookmark.h"
 #include "components/icons/folder.h"
 #include "components/icons/library.h"
+#include "components/icons/pixelAppIcons.h"
 #include "components/icons/recent.h"
 #include "components/icons/settings2.h"
 #include "components/icons/transfer.h"
@@ -26,8 +27,9 @@
 namespace {
 constexpr int COLS = 2;
 constexpr int GRID_GAP = 18;
-constexpr int ICON = 32;
-constexpr int EDGE = 40;  // right-edge band that starts the drawer swipe
+constexpr int ICON = 32;       // drawer icons
+constexpr int TILE_ICON = 64;  // 8-bit app icons
+constexpr int EDGE = 40;       // right-edge band that starts the drawer swipe
 constexpr int DRAWER_ROW = 72;
 constexpr const char* WEEKDAYS[] = {"Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"};
 constexpr const char* MONTHS[] = {"Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"};
@@ -39,10 +41,10 @@ struct Tile {
 };
 // Indexed by App - 1 (the Continue card is drawn separately).
 constexpr Tile TILES[] = {
-    {"Compound", "Daily brief", RecentIcon},
-    {"IELTS", "Vocab review", BookmarkIcon},
-    {"Chinese", "Hanzi review", BlocksIcon},
-    {"Library", "All books", LibraryIcon},
+    {"Compound", "Daily brief", PixelCompoundIcon},
+    {"IELTS", "Vocab review", PixelVocabIcon},
+    {"Chinese", "Hanzi review", PixelChineseIcon},
+    {"Library", "All books", PixelLibraryIcon},
 };
 constexpr Tile TOOLS[] = {
     {"Browse Files", nullptr, FolderIcon},
@@ -310,7 +312,7 @@ void LauncherActivity::render(RenderLock&&) {
     const int ty = gridTop() + row * (tileH + GRID_GAP);
     const bool sel = selected == i + 1;
     renderer.drawRoundedRect(x, ty, size, tileH, sel ? 3 : 1, 12, true);
-    renderer.drawIcon(TILES[i].icon, x + INSET, ty + INSET, ICON);
+    renderer.drawIcon(TILES[i].icon, x + INSET, ty + INSET, TILE_ICON);
     const int hintY = ty + tileH - INSET - smallH;
     renderer.drawText(SMALL_FONT_ID, x + INSET, hintY, TILES[i].hint);
     renderer.drawText(UI_12_FONT_ID, x + INSET, hintY - bodyH, TILES[i].label, true, EpdFontFamily::BOLD);
