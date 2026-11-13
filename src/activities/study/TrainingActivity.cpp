@@ -33,7 +33,7 @@ constexpr int BOX_GAP = 8;
 constexpr int STEP_W = 44;
 constexpr int LOAD_W = 84;
 constexpr int SAVE_H = 52;
-constexpr const char* TAB_NAMES[] = {"Today", "Gym", "Grip"};
+constexpr const char* TAB_NAMES[] = {"Today", "Gym", "Grip", "Hyrox"};
 constexpr const char* DAYS[] = {"Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"};
 constexpr const char* DAY_LETTER[] = {"S", "M", "T", "W", "T", "F", "S"};
 constexpr const char* MONTHS[] = {"Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"};
@@ -103,6 +103,8 @@ void TrainingActivity::onEnter() {
   openLiftDay(gym, gymDay);
   const training::LiftDay* gripToday = training::gripDay(wd);
   openLiftDay(grip, gripToday ? gripToday : training::gripDay(1));
+  int hyroxCount = 0;
+  openLiftDay(hyrox, training::hyroxDays(hyroxCount));
   loadTicks();
 
   if (!training::hasToken()) {
@@ -134,7 +136,8 @@ bool TrainingActivity::wifiSaved() const {
 std::vector<size_t> TrainingActivity::sessionsOn(const std::string& iso) const {
   std::vector<size_t> out;
   for (size_t i = 0; i < sessions.size(); ++i) {
-    if (sessions[i].date == iso) out.push_back(i);
+    // Hyrox is logged from its own tab and stays off the week view.
+    if (sessions[i].date == iso && sessions[i].type != "Hyrox") out.push_back(i);
   }
   // Runs first, then the rest in Notion order.
   std::stable_sort(out.begin(), out.end(),
@@ -159,6 +162,23 @@ void TrainingActivity::setDay(const std::string& iso) {
 }
 
 // ---- lifts ----
+
+const training::LiftDay* TrainingActivity::chipDay(const Tab t, const int i, int& count) {
+  if (t == Tab::Gym) {
+    const auto* days = training::gymDays(count);
+    return i >= 0 && i < count ? &days[i] : nullptr;
+  }
+  if (t == Tab::Hyrox) {
+    const auto* days = training::hyroxDays(count);
+    return i >= 0 && i < count ? &days[i] : nullptr;
+  }
+  count = 5;  // Mon ... Fri
+  return training::gripDay(i + 1);
+}
+
+const char* TrainingActivity::liftName(const Lift& l) const {
+  return &l == &gym ? "gym" : &l == &grip ? "grip" : "hyrox";
+}
 
 void TrainingActivity::openLiftDay(Lift& l, const training::LiftDay* day) {
   l.day = day;
@@ -190,19 +210,13 @@ void TrainingActivity::loadTicks() {
       col = tab + 1;
     }
     if (f.size() < 4 || f[1] != todayIso) continue;
-    Lift& l = f[0] == "gym" ? gym : grip;
+    const Tab t = f[0] == "gym" ? Tab::Gym : f[0] == "grip" ? Tab::Grip : Tab::Hyrox;
+    Lift& l = t == Tab::Gym ? gym : t == Tab::Grip ? grip : hyrox;
     const training::LiftDay* day = nullptr;
-    if (f[0] == "gym") {
-      int n = 0;
-      const auto* days = training::gymDays(n);
-      for (int i = 0; i < n; ++i) {
-        if (f[2] == days[i].key) day = &days[i];
-      }
-    } else {
-      for (int d = 1; d <= 5; ++d) {
-        const auto* g = training::gripDay(d);
-        if (g && f[2] == g->key) day = g;
-      }
+    int n = 1;
+    for (int i = 0; i < n; ++i) {
+      const auto* d = chipDay(t, i, n);
+      if (d && f[2] == d->key) day = d;
     }
     if (!day) continue;
     openLiftDay(l, day);
@@ -219,9 +233,9 @@ void TrainingActivity::loadTicks() {
 void TrainingActivity::saveTicks() const {
   if (todayIso.empty()) return;
   std::string text;
-  for (const Lift* l : {&gym, &grip}) {
+  for (const Lift* l : {&gym, &grip, &hyrox}) {
     if (!l->day) continue;
-    text += std::string(l == &gym ? "gym" : "grip") + "\t" + todayIso + "\t" + l->day->key + "\t";
+    text += std::string(liftName(*l)) + "\t" + todayIso + "\t" + l->day->key + "\t";
     for (size_t i = 0; i < l->done.size(); ++i) text += (i ? "," : "") + std::to_string(l->done[i]);
     text += "\n";
   }
@@ -239,7 +253,7 @@ void TrainingActivity::tick(Lift& l, const int exercise, const int box) {
     const bool untick = box >= 0 && box < n;
     n = untick ? box : target;
     l.focus = exercise;
-    if (!untick && n < e.sets) {
+    if (!untick && n < e.sets && e.rest > 0) {
       restSeconds = e.rest;
       restUntil = time(nullptr) + e.rest;
     } else {
@@ -253,6 +267,7 @@ void TrainingActivity::tick(Lift& l, const int exercise, const int box) {
 void TrainingActivity::changeLoad(Lift& l, const int exercise, const int dir) {
   if (!l.day || exercise < 0 || exercise >= l.day->count) return;
   const auto& e = l.day->ex[exercise];
+  if (e.unit[0] == '\0') return;  // bodyweight
   const bool seconds = e.unit[0] == 's';
   const float step = seconds ? 5.0f : (l.loads[exercise] >= 20 ? 2.5f : 1.0f);
   {
@@ -282,8 +297,13 @@ void TrainingActivity::saveLift(Lift& l) {
     total += l.done[i];
     if (l.done[i] == 0) continue;
     if (!log.empty()) log += ". ";
-    log += std::string(e.name) + " " + std::to_string(l.done[i]) + "/" + std::to_string(e.sets) + " @ " +
-           loadText(l.loads[i], e.unit);
+    if (&l == &hyrox) {
+      log += std::to_string(i + 1) + ". " + e.name + " " + e.target;
+      if (e.unit[0] != '\0') log += " @ " + loadText(l.loads[i], e.unit);
+    } else {
+      log += std::string(e.name) + " " + std::to_string(l.done[i]) + "/" + std::to_string(e.sets);
+      if (e.unit[0] != '\0') log += " @ " + loadText(l.loads[i], e.unit);
+    }
   }
   if (total == 0) {
     {
@@ -293,9 +313,10 @@ void TrainingActivity::saveLift(Lift& l) {
     return requestUpdate();
   }
   const bool isGym = &l == &gym;
+  const bool isHyrox = &l == &hyrox;
   const int week = training::weekOf(todayIso);
   training::Change c;
-  c.status = !isGym || total == all ? "Done" : "Modified";
+  c.status = (!isGym && !isHyrox) || total == all ? "Done" : "Modified";
 
   // Legs fills in the week's planned Strength session, like the phone app.
   training::Session* planned = nullptr;
@@ -310,7 +331,10 @@ void TrainingActivity::saveLift(Lift& l) {
     planned->status = c.status;
     planned->notes = c.notes;
   } else {
-    c.title = (isGym ? std::string(l.day->label) : std::string("Grip")) + " " + shortDay(todayIso);
+    c.title = (isGym     ? std::string(l.day->label)
+               : isHyrox ? "Mini Hyrox " + std::string(l.day->label)
+                         : std::string("Grip")) +
+              " " + shortDay(todayIso);
     c.date = todayIso;
     c.type = l.day->type;
     c.week = week;
@@ -508,13 +532,8 @@ void TrainingActivity::loop() {
         return setTab(static_cast<Tab>(h.a));
       case Chip: {
         Lift& l = lift();
-        const training::LiftDay* day = nullptr;
-        if (tab == Tab::Gym) {
-          int n = 0;
-          day = &training::gymDays(n)[h.a];
-        } else {
-          day = training::gripDay(h.a + 1);
-        }
+        int n = 0;
+        const training::LiftDay* day = chipDay(tab, h.a, n);
         if (day && day != l.day) {
           {
             RenderLock lock(*this);
@@ -770,12 +789,13 @@ void TrainingActivity::renderLift(int y) {
   Lift& l = lift();
 
   // Day chips.
-  int chipCount = 0;
-  const training::LiftDay* gymDays = training::gymDays(chipCount);
-  if (tab == Tab::Grip) chipCount = 5;
+  int chipCount = 1;
+  chipDay(tab, 0, chipCount);
   const int chipW = (width - (chipCount - 1) * 8) / chipCount;
   for (int i = 0; i < chipCount; ++i) {
-    const training::LiftDay* d = tab == Tab::Gym ? &gymDays[i] : training::gripDay(i + 1);
+    int n = 0;
+    const training::LiftDay* d = chipDay(tab, i, n);
+    if (!d) continue;
     const int x = pad + i * (chipW + 8);
     const bool sel = d == l.day;
     if (sel) {
@@ -796,7 +816,9 @@ void TrainingActivity::renderLift(int y) {
     total += l.done[i];
     all += l.day->ex[i].sets;
   }
-  std::string info = std::to_string(total) + " of " + std::to_string(all) + " sets";
+  const bool rounds = &l == &hyrox;
+  std::string info = std::to_string(total) + " of " + std::to_string(all) + (rounds ? " rounds" : " sets");
+  if (l.day->note) info = std::string(l.day->note) + " " + info + " done.";
   if (restUntil > time(nullptr)) {
     char buf[48];
     snprintf(buf, sizeof(buf), "Rest %d:%02d, next set at %s", restSeconds / 60, restSeconds % 60,
@@ -828,28 +850,33 @@ void TrainingActivity::renderLift(int y) {
     renderer.drawText(SMALL_FONT_ID, w - pad - targetW, y + 6 + bodyH - smallH - 2, e.target);
     hits.push_back({0, y, w, y + 8 + bodyH, Row, i, 0});
 
-    // Load: [-] 50 kg [+]
+    // Load: [-] 50 kg [+], or Bodyweight.
     const int cy = y + 6 + bodyH + 4;
-    renderer.drawRoundedRect(pad, cy, STEP_W, BOX, 1, 8, true);
-    drawCentered(renderer, UI_12_FONT_ID, pad, cy, STEP_W, BOX, "-", true, EpdFontFamily::BOLD);
-    hits.push_back({pad, cy, pad + STEP_W, cy + BOX, LoadDown, i, 0});
-    const std::string load = loadText(l.loads[i], e.unit);
-    drawCentered(renderer, UI_12_FONT_ID, pad + STEP_W, cy, LOAD_W, BOX, load.c_str(), true, EpdFontFamily::BOLD);
-    const int px = pad + STEP_W + LOAD_W;
-    renderer.drawRoundedRect(px, cy, STEP_W, BOX, 1, 8, true);
-    drawCentered(renderer, UI_12_FONT_ID, px, cy, STEP_W, BOX, "+", true, EpdFontFamily::BOLD);
-    hits.push_back({px, cy, px + STEP_W, cy + BOX, LoadUp, i, 0});
+    if (e.unit[0] == '\0') {
+      renderer.drawText(UI_12_FONT_ID, pad, cy + (BOX - bodyH) / 2, "Bodyweight");
+    } else {
+      renderer.drawRoundedRect(pad, cy, STEP_W, BOX, 1, 8, true);
+      drawCentered(renderer, UI_12_FONT_ID, pad, cy, STEP_W, BOX, "-", true, EpdFontFamily::BOLD);
+      hits.push_back({pad, cy, pad + STEP_W, cy + BOX, LoadDown, i, 0});
+      const std::string load = loadText(l.loads[i], e.unit);
+      drawCentered(renderer, UI_12_FONT_ID, pad + STEP_W, cy, LOAD_W, BOX, load.c_str(), true, EpdFontFamily::BOLD);
+      const int px = pad + STEP_W + LOAD_W;
+      renderer.drawRoundedRect(px, cy, STEP_W, BOX, 1, 8, true);
+      drawCentered(renderer, UI_12_FONT_ID, px, cy, STEP_W, BOX, "+", true, EpdFontFamily::BOLD);
+      hits.push_back({px, cy, px + STEP_W, cy + BOX, LoadUp, i, 0});
+    }
 
-    // Set boxes, right aligned; filled = done.
+    // Set boxes, right aligned; filled = done. A Hyrox station has one box,
+    // numbered with its round.
     for (int s = 0; s < e.sets; ++s) {
+      const std::string num = std::to_string(rounds ? i + 1 : s + 1);
       const int bx = w - pad - (e.sets - s) * BOX - (e.sets - s - 1) * BOX_GAP;
       if (s < l.done[i]) {
         renderer.fillRoundedRect(bx, cy, BOX, BOX, 8, Color::Black);
-        drawCentered(renderer, UI_10_FONT_ID, bx, cy, BOX, BOX, std::to_string(s + 1).c_str(), false,
-                     EpdFontFamily::BOLD);
+        drawCentered(renderer, UI_10_FONT_ID, bx, cy, BOX, BOX, num.c_str(), false, EpdFontFamily::BOLD);
       } else {
         renderer.drawRoundedRect(bx, cy, BOX, BOX, 2, 8, true);
-        drawCentered(renderer, UI_10_FONT_ID, bx, cy, BOX, BOX, std::to_string(s + 1).c_str(), true);
+        drawCentered(renderer, UI_10_FONT_ID, bx, cy, BOX, BOX, num.c_str(), true);
       }
       hits.push_back({bx - BOX_GAP / 2, cy - 6, bx + BOX + BOX_GAP / 2, cy + BOX + 6, SetBox, i, s});
     }

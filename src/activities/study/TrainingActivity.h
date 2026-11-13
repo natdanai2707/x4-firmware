@@ -13,6 +13,8 @@
 //          TrainingLogActivity (status, km, pace, HR, RPE, notes).
 //   Gym    Push / Legs / Pull: tick sets, set loads, save to Notion.
 //   Grip   the grip work of each weekday, same as Gym.
+//   Hyrox  Mini Hyrox stations (30 or 45 min), same as Gym, no timer.
+//          Hyrox logs are kept off the Today week.
 // Logs are queued on the card and sent when WiFi is available, then the plan
 // is pulled again so phone and device show the same thing.
 //
@@ -28,8 +30,8 @@ class TrainingActivity final : public Activity {
   bool preventAutoSleep() override { return syncing; }
 
  private:
-  enum class Tab : uint8_t { Today, Gym, Grip };
-  static constexpr int TAB_COUNT = 3;
+  enum class Tab : uint8_t { Today, Gym, Grip, Hyrox };
+  static constexpr int TAB_COUNT = 4;
 
   // Ticked sets of the open Gym or Grip day.
   struct Lift {
@@ -49,7 +51,10 @@ class TrainingActivity final : public Activity {
   void setDay(const std::string& iso);
   std::vector<size_t> sessionsOn(const std::string& iso) const;
 
-  Lift& lift() { return tab == Tab::Gym ? gym : grip; }
+  Lift& lift() { return tab == Tab::Gym ? gym : tab == Tab::Grip ? grip : hyrox; }
+  // Day chips of a lift tab: chip `i`, and the chip count in `count`.
+  static const training::LiftDay* chipDay(Tab t, int i, int& count);
+  const char* liftName(const Lift& l) const;
   void openLiftDay(Lift& l, const training::LiftDay* day);
   void tick(Lift& l, int exercise, int box);
   void changeLoad(Lift& l, int exercise, int dir);
@@ -74,6 +79,7 @@ class TrainingActivity final : public Activity {
   Tab tab = Tab::Today;
   Lift gym;
   Lift grip;
+  Lift hyrox;
   time_t restUntil = 0;
   int restSeconds = 0;
 

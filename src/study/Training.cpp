@@ -64,9 +64,9 @@ constexpr Exercise PULL[] = {
     {"hamcurl", "Hammer curl (heavy)", "3 x 8-10", 3, "kg", 12, 60},
 };
 constexpr LiftDay GYM[] = {
-    {"push", "Push", "Push", 1, PUSH, 6},
-    {"legs", "Legs", "Strength", 3, LEGS, 6},
-    {"pull", "Pull", "Pull", 5, PULL, 6},
+    {"push", "Push", "Push", 1, nullptr, PUSH, 6},
+    {"legs", "Legs", "Strength", 3, nullptr, LEGS, 6},
+    {"pull", "Pull", "Pull", 5, nullptr, PULL, 6},
 };
 
 constexpr Exercise GRIP_MON[] = {{"wrist", "Wrist curl", "5 x 15-25", 5, "kg", 5, 60}};
@@ -76,9 +76,31 @@ constexpr Exercise GRIP_THU[] = {{"rwrist", "Reverse wrist curl", "3 x 20", 3, "
                                  {"hammer", "Hammer curl", "3 x 12", 3, "kg", 8, 60}};
 constexpr Exercise GRIP_FRI[] = {{"finger", "Finger curl", "4 x 20", 4, "kg", 5, 60}};
 constexpr LiftDay GRIP[] = {
-    {"mon", "Mon", "Grip", 1, GRIP_MON, 1}, {"tue", "Tue", "Grip", 2, GRIP_TUE, 1},
-    {"wed", "Wed", "Grip", 3, GRIP_WED, 1}, {"thu", "Thu", "Grip", 4, GRIP_THU, 2},
-    {"fri", "Fri", "Grip", 5, GRIP_FRI, 1},
+    {"mon", "Mon", "Grip", 1, nullptr, GRIP_MON, 1}, {"tue", "Tue", "Grip", 2, nullptr, GRIP_TUE, 1},
+    {"wed", "Wed", "Grip", 3, nullptr, GRIP_WED, 1}, {"thu", "Thu", "Grip", 4, nullptr, GRIP_THU, 2},
+    {"fri", "Fri", "Grip", 5, nullptr, GRIP_FRI, 1},
+};
+
+// Station loads are remembered apart from the gym ones (hx_ keys).
+constexpr Exercise HYROX_30[] = {
+    {"hx_swing", "Kettlebell swing", "40 reps", 1, "kg", 16, 0},
+    {"hx_row", "Dumbbell bent-over row", "30 reps", 1, "kg", 12, 0},
+    {"hx_burpee", "Burpee", "20 reps", 1, "", 0, 0},
+    {"hx_farmer", "Farmer carry", "60 sec", 1, "kg", 20, 0},
+    {"hx_lunge", "Sandbag lunge", "30 reps", 1, "kg", 20, 0},
+    {"hx_thruster", "Dumbbell thruster", "30 reps", 1, "kg", 10, 0},
+};
+constexpr Exercise HYROX_45[] = {
+    {"hx_swing", "Kettlebell swing", "50 reps", 1, "kg", 16, 0},
+    {"hx_burpee", "Burpee", "25 reps", 1, "", 0, 0},
+    {"hx_lunge", "Sandbag lunge", "40 reps", 1, "kg", 20, 0},
+    {"hx_row", "Dumbbell bent-over row", "40 reps", 1, "kg", 12, 0},
+    {"hx_farmer", "Farmer carry", "90 sec", 1, "kg", 20, 0},
+    {"hx_press", "Dumbbell press", "40 reps", 1, "kg", 12, 0},
+};
+constexpr LiftDay HYROX[] = {
+    {"p30", "30 min", "Hyrox", -1, "6 rounds. Run 2 min, then the station.", HYROX_30, 6},
+    {"p45", "45 min", "Hyrox", -1, "6 rounds. Run 4 min, then the station.", HYROX_45, 6},
 };
 
 constexpr const char* RUN_TYPES[] = {"Easy", "Threshold", "10k Specific", "Long Run", "Time Trial", "Race"};
@@ -299,6 +321,11 @@ bool Session::isRun() const {
 const LiftDay* gymDays(int& count) {
   count = static_cast<int>(sizeof(GYM) / sizeof(GYM[0]));
   return GYM;
+}
+
+const LiftDay* hyroxDays(int& count) {
+  count = static_cast<int>(sizeof(HYROX) / sizeof(HYROX[0]));
+  return HYROX;
 }
 
 const LiftDay* gripDay(const int dow) {

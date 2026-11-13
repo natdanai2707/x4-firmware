@@ -168,6 +168,9 @@ Training Hub phone app. Both use the Notion "Sessions" database of
   shows when the rest ends. Save creates a session in Notion; Legs fills in the
   week's planned Strength session instead.
 - Grip: the grip work of each weekday, saved the same way.
+- Hyrox: Mini Hyrox 30 or 45 min. Each station is one round (run first, then
+  the station); tick it when done. No timer. Saved as a Hyrox session, which
+  the Today week does not show.
 
 Logs go into `/.crosspoint/training/outbox.tsv` first and are sent on the next
 sync, so a workout without WiFi is not lost. Sync sends the outbox, then pulls
