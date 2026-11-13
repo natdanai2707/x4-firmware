@@ -1,6 +1,7 @@
 #pragma once
 
 #include <string>
+#include <vector>
 
 #include "activities/Activity.h"
 
@@ -30,9 +31,16 @@ class LauncherActivity final : public Activity {
 
   // Layout, shared by render() and touch hit tests.
   int cardTop() const;
-  int cardHeight() const { return 120; }
-  int gridTop() const { return cardTop() + cardHeight() + 24; }
+  int cardHeight() const { return cardH; }
+  int gridTop() const { return cardTop() + cardHeight() + SECTION_GAP; }
   int tileSize() const;
+  int tileHeight() const;
+  void measureCard();  // sets cardH from the book title and author
+
+  static constexpr int INSET = 18;        // padding inside cards and tiles
+  static constexpr int SECTION_GAP = 24;  // space between blocks
+  int cardH = 120;
+  std::vector<std::string> titleLines;
   int drawerLeft() const;
 
   std::string bookTitle;

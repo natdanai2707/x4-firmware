@@ -5,6 +5,7 @@
 #include <Logging.h>
 #include <Memory.h>
 
+#include <algorithm>
 #include <ctime>
 
 #include "MappedInputManager.h"
@@ -65,12 +66,42 @@ void LauncherActivity::onEnter() {
     break;
   }
   selected = bookPath.empty() ? 1 : 0;
+  measureCard();
   requestUpdate();
 }
 
 int LauncherActivity::cardTop() const {
   const auto& m = UITheme::getInstance().getMetrics();
-  return m.topPadding + m.headerHeight + 96;  // below the big clock
+  // Below the clock line (see render()).
+  return m.topPadding + m.headerHeight + SECTION_GAP / 2 + renderer.getLineHeight(NOTOSANS_18_FONT_ID) + SECTION_GAP;
+}
+
+void LauncherActivity::measureCard() {
+  const auto& m = UITheme::getInstance().getMetrics();
+  const int inner = renderer.getScreenWidth() - 2 * m.contentSidePadding - 2 * INSET;
+  titleLines.clear();
+  if (!bookPath.empty()) {
+    titleLines = renderer.wrappedText(UI_12_FONT_ID, bookTitle.c_str(), inner, 2, EpdFontFamily::BOLD);
+  }
+  const int smallH = renderer.getLineHeight(SMALL_FONT_ID);
+  const int bodyH = renderer.getLineHeight(UI_12_FONT_ID);
+  int h = INSET + smallH + 8;
+  if (bookPath.empty()) {
+    h += bodyH + 4 + smallH;
+  } else {
+    h += static_cast<int>(titleLines.size()) * bodyH;
+    if (!bookAuthor.empty()) h += 4 + smallH;
+  }
+  cardH = h + INSET;
+}
+
+// Two rows of tiles share the space below the card, within a pleasant ratio.
+int LauncherActivity::tileHeight() const {
+  const auto& m = UITheme::getInstance().getMetrics();
+  const int size = tileSize();
+  const int bottom = renderer.getScreenHeight() - m.buttonHintsHeight - SECTION_GAP;
+  const int fit = (bottom - gridTop() - GRID_GAP) / 2;
+  return std::max(size / 2, std::min(fit, size * 9 / 10));
 }
 
 int LauncherActivity::tileSize() const {
@@ -84,7 +115,7 @@ int LauncherActivity::tileAt(const int x, const int y) const {
   const auto& m = UITheme::getInstance().getMetrics();
   if (y >= cardTop() && y < cardTop() + cardHeight()) return 0;
   const int size = tileSize();
-  const int tileH = size * 2 / 3;
+  const int tileH = tileHeight();
   if (y < gridTop() || x < m.contentSidePadding) return -1;
   const int col = (x - m.contentSidePadding) / (size + GRID_GAP);
   const int row = (y - gridTop()) / (tileH + GRID_GAP);
@@ -235,44 +266,54 @@ void LauncherActivity::render(RenderLock&&) {
   }
   GUI.drawHeader(renderer, Rect{0, m.topPadding, w, m.headerHeight}, date.empty() ? "Home" : date.c_str(), nullptr,
                  false);
+  // Clock, with the menu hint on the same line.
+  const int clockTop = m.topPadding + m.headerHeight + SECTION_GAP / 2;
+  const int clockH = renderer.getLineHeight(NOTOSANS_18_FONT_ID);
   if (!clock.empty()) {
-    renderer.drawText(NOTOSANS_18_FONT_ID, pad, m.topPadding + m.headerHeight + 20, clock.c_str(), true,
-                      EpdFontFamily::BOLD);
+    renderer.drawText(NOTOSANS_18_FONT_ID, pad, clockTop, clock.c_str(), true, EpdFontFamily::BOLD);
   }
-  renderer.drawText(SMALL_FONT_ID, w - pad - renderer.getTextWidth(SMALL_FONT_ID, "Swipe from edge for menu  <"),
-                    m.topPadding + m.headerHeight + 32, "Swipe from edge for menu  <");
+  static constexpr const char* HINT = "Swipe from edge for menu  <";
+  renderer.drawText(SMALL_FONT_ID, w - pad - renderer.getTextWidth(SMALL_FONT_ID, HINT),
+                    clockTop + (clockH - renderer.getLineHeight(SMALL_FONT_ID)) / 2, HINT);
 
-  // Continue reading card.
+  // Continue reading card: label, title (up to 2 lines), author.
   const int top = cardTop();
   const bool cardSel = selected == 0;
+  const int smallH = renderer.getLineHeight(SMALL_FONT_ID);
+  const int bodyH = renderer.getLineHeight(UI_12_FONT_ID);
   renderer.drawRoundedRect(pad, top, w - 2 * pad, cardHeight(), cardSel ? 3 : 1, 12, true);
-  renderer.drawText(SMALL_FONT_ID, pad + 18, top + 14, "CONTINUE READING", true, EpdFontFamily::BOLD);
+  int y = top + INSET;
+  renderer.drawText(SMALL_FONT_ID, pad + INSET, y, "CONTINUE READING", true, EpdFontFamily::BOLD);
+  y += smallH + 8;
   if (bookPath.empty()) {
-    renderer.drawText(UI_12_FONT_ID, pad + 18, top + 46, "No book open yet.");
-    renderer.drawText(SMALL_FONT_ID, pad + 18, top + 78, "Open one from Library.");
+    renderer.drawText(UI_12_FONT_ID, pad + INSET, y, "No book open yet.", true, EpdFontFamily::BOLD);
+    y += bodyH + 4;
+    renderer.drawText(SMALL_FONT_ID, pad + INSET, y, "Open one from Library.");
   } else {
-    const auto lines = renderer.wrappedText(UI_12_FONT_ID, bookTitle.c_str(), w - 2 * pad - 36, 2, EpdFontFamily::BOLD);
-    int y = top + 40;
-    for (const auto& l : lines) {
-      renderer.drawText(UI_12_FONT_ID, pad + 18, y, l.c_str(), true, EpdFontFamily::BOLD);
-      y += renderer.getLineHeight(UI_12_FONT_ID);
+    for (const auto& l : titleLines) {
+      renderer.drawText(UI_12_FONT_ID, pad + INSET, y, l.c_str(), true, EpdFontFamily::BOLD);
+      y += bodyH;
     }
-    if (!bookAuthor.empty()) renderer.drawText(SMALL_FONT_ID, pad + 18, y + 2, bookAuthor.c_str());
+    if (!bookAuthor.empty()) {
+      const auto author = renderer.wrappedText(SMALL_FONT_ID, bookAuthor.c_str(), w - 2 * pad - 2 * INSET, 1);
+      if (!author.empty()) renderer.drawText(SMALL_FONT_ID, pad + INSET, y + 4, author[0].c_str());
+    }
   }
 
-  // App tiles.
+  // App tiles: icon top left, name and hint at the bottom, same inset.
   const int size = tileSize();
-  const int tileH = size * 2 / 3;
+  const int tileH = tileHeight();
   for (int i = 0; i < APP_COUNT - 1; ++i) {
     const int col = i % COLS;
     const int row = i / COLS;
     const int x = pad + col * (size + GRID_GAP);
-    const int y = gridTop() + row * (tileH + GRID_GAP);
+    const int ty = gridTop() + row * (tileH + GRID_GAP);
     const bool sel = selected == i + 1;
-    renderer.drawRoundedRect(x, y, size, tileH, sel ? 3 : 1, 12, true);
-    renderer.drawIcon(TILES[i].icon, x + 18, y + 18, ICON);
-    renderer.drawText(UI_12_FONT_ID, x + 18, y + tileH - 62, TILES[i].label, true, EpdFontFamily::BOLD);
-    renderer.drawText(SMALL_FONT_ID, x + 18, y + tileH - 32, TILES[i].hint);
+    renderer.drawRoundedRect(x, ty, size, tileH, sel ? 3 : 1, 12, true);
+    renderer.drawIcon(TILES[i].icon, x + INSET, ty + INSET, ICON);
+    const int hintY = ty + tileH - INSET - smallH;
+    renderer.drawText(SMALL_FONT_ID, x + INSET, hintY, TILES[i].hint);
+    renderer.drawText(UI_12_FONT_ID, x + INSET, hintY - bodyH, TILES[i].label, true, EpdFontFamily::BOLD);
   }
 
   // Device drawer.
