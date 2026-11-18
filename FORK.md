@@ -166,13 +166,16 @@ Training Hub phone app. Both use the Notion "Sessions" database of
   only Run syncs on open. Back from a tab returns to the picker.
 - Run: week strip and the sessions of the chosen day. Tap a session to log
   status, distance, pace, average HR, RPE and a note.
-- Gym: Push, Legs, Pull (no one-arm row). Tick sets, change loads with - and +. A ticked set
+- Gym: Upper A (Mon), Arms (Wed), Upper B (Fri), Legs (Sat), same as the
+  phone app. Tick sets, change loads with - and + (box jump in cm). A ticked set
   shows when the rest ends. Save creates a session in Notion; Legs fills in the
   week's planned Strength session instead.
 - Grip: the grip work of each weekday, saved the same way.
-- Hyrox: Mini Hyrox 30 or 45 min. Each station is one round (run first, then
-  the station); tick it when done. No timer. Saved as a Hyrox session, which
-  the Today week does not show.
+- Hyrox: Mini Hyrox 45 min (6 rounds) or 60 min (8 rounds), a 5 min run before
+  each station. Tick a station when done. No timer. Save fills in today's
+  planned Hyrox session, or creates one.
+- The Run week shows plan sessions only; gym, grip and Hyrox logs stay off it,
+  like the phone app.
 
 Logs go into `/.crosspoint/training/outbox.tsv` first and are sent on the next
 sync, so a workout without WiFi is not lost. Sync sends the outbox, then pulls

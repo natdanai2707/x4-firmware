@@ -136,8 +136,13 @@ bool TrainingActivity::wifiSaved() const {
 std::vector<size_t> TrainingActivity::sessionsOn(const std::string& iso) const {
   std::vector<size_t> out;
   for (size_t i = 0; i < sessions.size(); ++i) {
-    // Hyrox is logged from its own tab and stays off the week view.
-    if (sessions[i].date == iso && sessions[i].type != "Hyrox") out.push_back(i);
+    // Gym, grip and Hyrox are logged from their own tabs and stay off the week
+    // view, like the phone app.
+    if (sessions[i].date != iso) continue;
+    const std::string& t = sessions[i].type;
+    bool off = t == "Hyrox";
+    for (const char* o : {"Grip", "Push", "Pull", "Upper", "Upper A", "Upper B", "Arms"}) off = off || t == o;
+    if (!off) out.push_back(i);
   }
   // Runs first, then the rest in Notion order.
   std::stable_sort(out.begin(), out.end(),
@@ -274,7 +279,8 @@ void TrainingActivity::changeLoad(Lift& l, const int exercise, const int dir) {
   const auto& e = l.day->ex[exercise];
   if (e.unit[0] == '\0') return;  // bodyweight
   const bool seconds = e.unit[0] == 's';
-  const float step = seconds ? 5.0f : (l.loads[exercise] >= 20 ? 2.5f : 1.0f);
+  const bool cm = e.unit[0] == 'c';
+  const float step = seconds || cm ? 5.0f : (l.loads[exercise] >= 20 ? 2.5f : 1.0f);
   {
     RenderLock lock(*this);
     l.loads[exercise] = std::max(0.0f, l.loads[exercise] + dir * step);
@@ -325,12 +331,30 @@ void TrainingActivity::saveLift(Lift& l) {
 
   // Legs fills in the week's planned Strength session, like the phone app.
   training::Session* planned = nullptr;
+  // Hyrox fills in today's planned Hyrox session the same way.
   if (isGym && std::string(l.day->key) == "legs") {
     for (auto& s : sessions) {
       if (s.type == "Strength" && s.week == week && !s.done() && !s.id.empty()) planned = &s;
     }
   }
-  if (planned) {
+  if (isHyrox) {
+    for (auto& s : sessions) {
+      if (s.type == "Hyrox" && s.date == todayIso && !s.done() && !s.id.empty()) planned = &s;
+    }
+  }
+  const std::string targetText = isHyrox ? std::to_string(total) + "/" + std::to_string(all) + " rounds"
+                                 : isGym ? std::to_string(total) + "/" + std::to_string(all) + " sets"
+                                         : std::to_string(total) + " sets";
+  if (planned && isHyrox) {
+    c.pageId = planned->id;
+    c.title = "Mini Hyrox " + std::string(l.day->label) + " " + shortDay(todayIso);
+    c.workout = log;
+    c.targetPace = targetText;
+    planned->title = c.title;
+    planned->status = c.status;
+    planned->workout = c.workout;
+    planned->targetPace = c.targetPace;
+  } else if (planned) {
     c.pageId = planned->id;
     c.notes = "Log: " + log;
     planned->status = c.status;
@@ -344,8 +368,7 @@ void TrainingActivity::saveLift(Lift& l) {
     c.type = l.day->type;
     c.week = week;
     c.workout = log;
-    c.targetPace =
-        isGym ? std::to_string(total) + "/" + std::to_string(all) + " sets" : std::to_string(total) + " sets";
+    c.targetPace = targetText;
     training::Session s;
     s.date = c.date;
     s.title = c.title;
@@ -664,7 +687,7 @@ void TrainingActivity::renderPicker() {
     }
   }
   const int wd = todayIso.empty() ? -1 : training::weekday(todayIso);
-  std::string gymText = "Push, Legs, Pull";
+  std::string gymText = "Upper A, Arms, Upper B, Legs";
   int n = 0;
   const auto* gymDays = training::gymDays(n);
   for (int i = 0; i < n; ++i) {
@@ -672,7 +695,7 @@ void TrainingActivity::renderPicker() {
   }
   const auto* gripToday = training::gripDay(wd);
   const std::string gripText = gripToday ? gripToday->ex[0].name : "Mon to Fri";
-  const std::string subs[TAB_COUNT] = {run, gymText, gripText, "30 or 45 min"};
+  const std::string subs[TAB_COUNT] = {run, gymText, gripText, "45 or 60 min"};
 
   const int pending = training::pendingCount();
   const int footH = pending > 0 ? smallH + GAP : 0;

@@ -34,7 +34,7 @@ struct Exercise {
   const char* name;
   const char* target;
   int sets;
-  const char* unit;  // "kg", "s", or "" for bodyweight
+  const char* unit;  // "kg", "s", "cm", or "" for bodyweight
   float def;
   int rest;  // seconds
 };
@@ -49,9 +49,9 @@ struct LiftDay {
   int count;
 };
 
-// Push, Legs, Pull; LiftDay::dow is the planned weekday.
+// Upper A, Arms, Upper B, Legs; LiftDay::dow is the planned weekday.
 const LiftDay* gymDays(int& count);
-// Mini Hyrox programs (30 and 45 min): one station per round, a run before
+// Mini Hyrox programs (45 and 60 min): one station per round, a run before
 // each. Not tied to a weekday.
 const LiftDay* hyroxDays(int& count);
 // Grip work for a weekday (1 Mon ... 5 Fri), nullptr otherwise.

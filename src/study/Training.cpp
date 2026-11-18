@@ -39,33 +39,44 @@ constexpr char BLOCK_START[] = "2026-11-02";  // Week 1, Monday
 constexpr int WINDOW_BACK = 7;
 constexpr int WINDOW_AHEAD = 14;
 
-constexpr Exercise PUSH[] = {
-    {"bench", "Bench press", "4 x 6-8", 4, "kg", 50, 120},
-    {"incdb", "Incline dumbbell press", "3 x 8-10", 3, "kg", 18, 90},
-    {"ohp", "Seated dumbbell shoulder press", "3 x 8-10", 3, "kg", 14, 90},
-    {"lat", "Lateral raise", "4 x 12-15", 4, "kg", 7, 60},
+// Upper/lower split, same as the phone app: Upper A Mon, Arms Wed, Upper B Fri,
+// Legs Sat. Legs is the plan's Strength session.
+constexpr Exercise UPPER_A[] = {
+    {"incdb", "Incline dumbbell press", "4 x 6-10", 4, "kg", 18, 150},
+    {"pullup", "Pull-up or lat pulldown", "4 x 6-10", 4, "kg", 0, 120},
+    {"bench", "Bench press", "3 x 6-8", 3, "kg", 50, 150},
+    {"csrow", "Chest-supported row", "3 x 8-10", 3, "kg", 40, 90},
+    {"lat", "Cable lateral raise", "3 x 12-15", 3, "kg", 7, 60},
+    {"ohtri", "Overhead cable triceps extension", "3 x 10-12", 3, "kg", 20, 60},
+};
+constexpr Exercise ARMS[] = {
+    {"lat", "Cable lateral raise", "4 x 12-15", 4, "kg", 7, 60},
+    {"inccurl", "Incline dumbbell curl", "4 x 8-12", 4, "kg", 9, 75},
+    {"ohtri", "Overhead cable triceps extension", "4 x 8-12", 4, "kg", 20, 75},
+    {"preacher", "EZ-bar preacher curl", "3 x 8-12", 3, "kg", 20, 60},
     {"push", "Triceps rope pushdown", "3 x 10-12", 3, "kg", 20, 60},
-    {"ohtri", "Overhead triceps extension", "3 x 10-12", 3, "kg", 15, 60},
+    {"rpec", "Reverse pec deck or face pull", "3 x 15", 3, "kg", 15, 60},
+};
+constexpr Exercise UPPER_B[] = {
+    {"chestpress", "Dumbbell or machine chest press", "3 x 8-12", 3, "kg", 20, 90},
+    {"fly", "Low-to-high cable fly", "3 x 12-15", 3, "kg", 7.5f, 60},
+    {"pulldown", "Lat pulldown", "3 x 10-12", 3, "kg", 40, 90},
+    {"crow", "Seated cable row", "3 x 10-12", 3, "kg", 40, 90},
+    {"lat", "Cable lateral raise", "4 x 12-15", 4, "kg", 7, 60},
+    {"ccurl", "Cable curl (both arms)", "3 x 10-12", 3, "kg", 15, 60},
 };
 constexpr Exercise LEGS[] = {
-    {"squat", "Squat", "3 x 6-8", 3, "kg", 24, 120},
-    {"rdl", "Romanian deadlift", "3 x 8", 3, "kg", 50, 120},
-    {"bss", "Bulgarian split squat", "3 x 8 per leg", 3, "kg", 12, 90},
-    {"stepup", "Knee-height step-up", "3 x 8 per leg", 3, "kg", 10, 60},
-    {"calf", "Bent-knee calf raise", "3 x 12", 3, "kg", 20, 60},
-    {"plank", "Side plank", "2 x 30s per side", 2, "s", 30, 45},
-};
-constexpr Exercise PULL[] = {
-    {"pullup", "Pull-up or lat pulldown", "4 x 6-10", 4, "kg", 0, 120},
-    {"csrow", "Chest-supported row", "4 x 8-10", 4, "kg", 40, 90},
-    {"face", "Face pull", "3 x 15", 3, "kg", 15, 60},
-    {"inccurl", "Incline dumbbell curl", "3 x 8-12", 3, "kg", 9, 60},
-    {"hamcurl", "Hammer curl (heavy)", "3 x 8-10", 3, "kg", 12, 60},
+    {"boxjump", "Box jump", "3 x 5", 3, "cm", 50, 90},
+    {"squat", "Back squat (heavy)", "4 x 4-6", 4, "kg", 40, 150},
+    {"rdl", "Romanian deadlift", "3 x 6", 3, "kg", 50, 120},
+    {"thrust", "Barbell hip thrust", "3 x 8-10", 3, "kg", 40, 90},
+    {"calf", "Standing calf raise (lengthened)", "3 x 12-15", 3, "kg", 20, 60},
 };
 constexpr LiftDay GYM[] = {
-    {"push", "Push", "Push", 1, nullptr, PUSH, 6},
-    {"legs", "Legs", "Strength", 3, nullptr, LEGS, 6},
-    {"pull", "Pull", "Pull", 5, nullptr, PULL, 5},
+    {"upa", "Upper A", "Upper A", 1, nullptr, UPPER_A, 6},
+    {"arms", "Arms", "Arms", 3, nullptr, ARMS, 6},
+    {"upb", "Upper B", "Upper B", 5, nullptr, UPPER_B, 6},
+    {"legs", "Legs", "Strength", 6, nullptr, LEGS, 5},
 };
 
 constexpr Exercise GRIP_MON[] = {{"wrist", "Wrist curl", "5 x 15-25", 5, "kg", 5, 60}};
@@ -80,26 +91,29 @@ constexpr LiftDay GRIP[] = {
     {"fri", "Fri", "Grip", 5, nullptr, GRIP_FRI, 1},
 };
 
-// Station loads are remembered apart from the gym ones (hx_ keys).
-constexpr Exercise HYROX_30[] = {
-    {"hx_swing", "Kettlebell swing", "40 reps", 1, "kg", 16, 0},
-    {"hx_row", "Dumbbell bent-over row", "30 reps", 1, "kg", 12, 0},
-    {"hx_burpee", "Burpee", "20 reps", 1, "", 0, 0},
-    {"hx_farmer", "Farmer carry", "60 sec", 1, "kg", 20, 0},
-    {"hx_lunge", "Sandbag lunge", "30 reps", 1, "kg", 20, 0},
-    {"hx_thruster", "Dumbbell thruster", "30 reps", 1, "kg", 10, 0},
-};
+// Station loads are remembered apart from the gym ones (hx_ keys). Each round
+// is a 5 min run, then the station.
 constexpr Exercise HYROX_45[] = {
     {"hx_swing", "Kettlebell swing", "50 reps", 1, "kg", 16, 0},
+    {"hx_bagsquat", "Sandbag squat (bear hug)", "30 reps", 1, "kg", 20, 0},
     {"hx_burpee", "Burpee", "25 reps", 1, "", 0, 0},
-    {"hx_lunge", "Sandbag lunge", "40 reps", 1, "kg", 20, 0},
-    {"hx_row", "Dumbbell bent-over row", "40 reps", 1, "kg", 12, 0},
     {"hx_farmer", "Farmer carry", "90 sec", 1, "kg", 20, 0},
-    {"hx_press", "Dumbbell press", "40 reps", 1, "kg", 12, 0},
+    {"hx_lunge", "Sandbag lunge", "40 reps", 1, "kg", 20, 0},
+    {"hx_thruster", "Dumbbell thruster", "30 reps", 1, "kg", 10, 0},
+};
+constexpr Exercise HYROX_60[] = {
+    {"hx_swing", "Kettlebell swing", "50 reps", 1, "kg", 16, 0},
+    {"hx_bagsquat", "Sandbag squat (bear hug)", "30 reps", 1, "kg", 20, 0},
+    {"hx_row", "Dumbbell bent-over row", "40 reps", 1, "kg", 12, 0},
+    {"hx_burpee", "Burpee", "25 reps", 1, "", 0, 0},
+    {"hx_highpull", "Kettlebell high pull", "40 reps", 1, "kg", 16, 0},
+    {"hx_farmer", "Farmer carry", "2 min", 1, "kg", 20, 0},
+    {"hx_lunge", "Sandbag lunge", "40 reps", 1, "kg", 20, 0},
+    {"hx_thruster", "Dumbbell thruster", "40 reps", 1, "kg", 10, 0},
 };
 constexpr LiftDay HYROX[] = {
-    {"p30", "30 min", "Hyrox", -1, "6 rounds. Run 2 min, then the station.", HYROX_30, 6},
-    {"p45", "45 min", "Hyrox", -1, "6 rounds. Run 4 min, then the station.", HYROX_45, 6},
+    {"p45", "45 min", "Hyrox", -1, "6 rounds. Run 5 min, then the station.", HYROX_45, 6},
+    {"p60", "60 min", "Hyrox", -1, "8 rounds. Run 5 min, then the station.", HYROX_60, 8},
 };
 
 constexpr const char* RUN_TYPES[] = {"Easy", "Threshold", "10k Specific", "Long Run", "Time Trial", "Race"};
