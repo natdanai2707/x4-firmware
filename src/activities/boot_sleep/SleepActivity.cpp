@@ -870,14 +870,14 @@ void SleepActivity::renderQuoteSleepScreen() const {
     while (*s) {
       const char* e = s;
       while (*e && *e != ' ') ++e;
-      std::string word(s, e - s);
-      const int ww = renderer.getTextWidth(font, word.c_str(), style);
+      std::string token(s, e - s);
+      const int ww = renderer.getTextWidth(font, token.c_str(), style);
       if (x > 0 && x + space + ww > maxW) {
         x = 0;
         ++line;
       }
       if (x > 0) x += space;
-      words.push_back({word, p.strong, x, line});
+      words.push_back({token, p.strong, x, line});
       x += ww;
       s = *e ? e + 1 : e;
     }
