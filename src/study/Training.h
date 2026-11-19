@@ -39,6 +39,8 @@ struct Exercise {
   int rest;                         // seconds
   const char* cue = nullptr;        // coaching cue, or the Hyrox substitute note
   const char* shortName = nullptr;  // step strip label
+  const char* rir = nullptr;        // reps in reserve, e.g. "RIR 1-2"
+  int superset = 0;                 // 1-based partner exercise, 0 for none
 };
 
 struct LiftDay {
@@ -58,6 +60,15 @@ const LiftDay* gymDays(int& count);
 const LiftDay* hyroxDays(int& count);
 // Grip work for a weekday (1 Mon ... 5 Fri), nullptr otherwise.
 const LiftDay* gripDay(int dow);
+
+// The plan's gym day for a Notion type (Upper A, Upper B, Arms, Strength, and
+// the older Push, Pull, Upper), or nullptr when it is not a gym type.
+const LiftDay* gymDayForType(const std::string& type);
+// The gym day on `iso`, as the phone app schedules it: a gym row in Notion on
+// that date wins; otherwise the plan's weekday, unless that program already
+// has a row on another day of the same week (planned, done or skipped), or
+// the date is outside the block.
+const LiftDay* gymDayOn(const std::string& iso, const std::vector<Session>& sessions);
 
 std::string today();  // "" when the clock is not set
 std::string addDays(const std::string& iso, int days);

@@ -9,6 +9,7 @@
 #include <algorithm>
 #include <cstdio>
 #include <cstdlib>
+#include <cstring>
 #include <ctime>
 
 #include "network/HttpDownloader.h"
@@ -41,65 +42,73 @@ constexpr int WINDOW_AHEAD = 14;
 
 // Upper/lower split, same as the phone app: Upper A Mon, Arms Wed, Upper B Fri,
 // Legs Sat. Legs is the plan's Strength session.
+// Same program as the phone app (PPL): order, RIR, cues and supersets.
 constexpr Exercise UPPER_A[] = {
     {"incdb", "Incline dumbbell press", "4 x 6-10", 4, "kg", 18, 150,
-     "Heavy day. Bench at 30 degrees, no higher. Lower deep for a full chest stretch. Leave 1-2 reps in the tank.",
-     "Incline"},
+     "Bench at 30 degrees, no higher. Lower deep for a full chest stretch.", "Incline", "RIR 1-2", 2},
     {"pullup", "Pull-up or lat pulldown", "4 x 6-10", 4, "kg", 0, 120,
-     "Full hang at the bottom, shoulders down first, chest to the bar.", "Pull"},
+     "Full hang at the bottom, shoulders down first, chest to the bar.", "Pull", "RIR 1-2", 1},
     {"bench", "Bench press", "3 x 6-8", 3, "kg", 50, 150,
-     "Squeeze shoulder blades, feet planted. Lower slowly to the chest.", "Bench"},
+     "Squeeze shoulder blades, feet planted. Lower slowly to the chest.", "Bench", "RIR 1-2", 4},
     {"csrow", "Chest-supported row", "3 x 8-10", 3, "kg", 40, 90,
-     "Let the shoulder blades stretch forward, then drive elbows back. Squeeze 1 second.", "Row"},
+     "Let the shoulder blades stretch forward, then drive elbows back. Squeeze 1 second.", "Row", "RIR 1-2", 3},
     {"lat", "Cable lateral raise", "3 x 12-15", 3, "kg", 7, 60,
      "Both arms together. Raise to shoulder height, no swinging. Last set: failure, then 5 bottom-half partials.",
-     "Lateral"},
-    {"ohtri", "Overhead cable triceps extension", "3 x 10-12", 3, "kg", 20, 60,
-     "Face away from the cable, elbows up, rope deep behind the head. The stretch grows the long head.", "Triceps"},
+     "Lateral", "RIR 1, last 0", 6},
+    {"ohtri", "Overhead cable triceps extension (rope)", "3 x 10-12", 3, "kg", 20, 60,
+     "Face away from the cable, elbows up, rope deep behind the head. The stretch grows the long head.", "Triceps",
+     "RIR 1, last 0", 5},
 };
 constexpr Exercise ARMS[] = {
     {"lat", "Cable lateral raise", "4 x 12-15", 4, "kg", 7, 60,
-     "Fresh delts first. Last set: failure, then 5 bottom-half partials.", "Lateral"},
+     "Fresh delts first. Last set: failure, then 5 bottom-half partials.", "Lateral", "RIR 1, last 0", 0},
     {"inccurl", "Incline dumbbell curl", "4 x 8-12", 4, "kg", 9, 75,
-     "Both arms together. Bench at 45 degrees, arms hang behind the body. Last set: failure, then partials.", "Curl"},
-    {"ohtri", "Overhead cable triceps extension", "4 x 8-12", 4, "kg", 20, 75,
-     "Elbows up, rope deep behind the head. Go heavier than on Upper A.", "Triceps"},
+     "Both arms together. Bench at 45 degrees, arms hang behind the body. Last set: failure, then bottom-half "
+     "partials.",
+     "Curl", "RIR 1, last 0", 3},
+    {"ohtri", "Overhead cable triceps extension (rope)", "4 x 8-12", 4, "kg", 20, 75,
+     "Elbows up, rope deep behind the head. Go heavier than on Upper A.", "Triceps", "RIR 1, last 0", 2},
     {"preacher", "EZ-bar preacher curl", "3 x 8-12", 3, "kg", 20, 60,
-     "Lower all the way to a straight arm, slow. The bottom half is where the growth is.", "Preacher"},
+     "Lower all the way to a straight arm, slow. The bottom half is where the growth is.", "Preach", "RIR 1, last 0",
+     5},
     {"push", "Triceps rope pushdown", "3 x 10-12", 3, "kg", 20, 60, "Elbows still at your sides. Last set to failure.",
-     "Pushdown"},
+     "Push", "RIR 1, last 0", 4},
     {"rpec", "Reverse pec deck or face pull", "3 x 15", 3, "kg", 15, 60,
-     "Rear delts. Arms long, sweep back, pause 1 second.", "Rear delt"},
+     "Rear delts. Arms long, sweep back, pause 1 second.", "Rear", "RIR 1", 7},
+    {"wrist", "Dumbbell wrist curl (both hands)", "3 x 15-20", 3, "kg", 8, 45,
+     "Forearms on a bench, palms up. Let the dumbbells roll to the fingertips, lower for 3 seconds.", "Wrist",
+     "RIR 0-1", 6},
 };
 constexpr Exercise UPPER_B[] = {
     {"chestpress", "Dumbbell or machine chest press", "3 x 8-12", 3, "kg", 20, 90,
-     "Volume day. Deep stretch at the bottom, smooth press.", "Press"},
-    {"fly", "Low-to-high cable fly", "3 x 12-15", 3, "kg", 7.5f, 60,
-     "Both arms together. Cables low, sweep up to chin height. Upper chest.", "Fly"},
-    {"pulldown", "Lat pulldown", "3 x 10-12", 3, "kg", 40, 90, "Full stretch at the top, pull elbows down to the ribs.",
-     "Pulldown"},
-    {"crow", "Seated cable row", "3 x 10-12", 3, "kg", 40, 90,
-     "Both arms. Reach forward for the lat stretch, then pull to the belly.", "Row"},
-    {"lat", "Cable lateral raise", "4 x 12-15", 4, "kg", 7, 60, "Last set: failure, then 5 bottom-half partials.",
-     "Lateral"},
-    {"ccurl", "Cable curl (both arms)", "3 x 10-12", 3, "kg", 15, 60,
-     "Step back so the cable pulls the arms slightly behind you at the bottom. Full stretch.", "Curl"},
+     "Deep stretch at the bottom, smooth press.", "Press", "RIR 1-2", 2},
+    {"pulldown", "Lat pulldown", "3 x 10-12", 3, "kg", 55, 90, "Full stretch at the top, pull elbows down to the ribs.",
+     "Pulldown", "RIR 1-2", 1},
+    {"fly", "Low-to-high cable fly", "3 x 12-15", 3, "kg", 30, 60,
+     "Both arms together. Cables low, sweep up to chin height. Upper chest.", "Fly", "RIR 1", 4},
+    {"crow", "Seated cable row", "3 x 10-12", 3, "kg", 45, 90,
+     "Both arms. Reach forward for the lat stretch, then pull to the belly.", "Row", "RIR 1-2", 3},
+    {"lat", "Cable lateral raise", "4 x 12-15", 4, "kg", 12, 60, "Last set: failure, then 5 bottom-half partials.",
+     "Lateral", "RIR 1, last 0", 6},
+    {"rhammer", "Cable rope hammer curl", "3 x 10-12", 3, "kg", 15, 60,
+     "Rope on the low pulley, thumbs up, elbows at your sides. Builds the brachialis and top of the forearm.", "Hammer",
+     "RIR 1, last 0", 5},
 };
 constexpr Exercise LEGS[] = {
     {"boxjump", "Box jump", "3 x 5", 3, "cm", 50, 90, "First, while fresh. Jump with both feet, land soft. Step down.",
      "Box jump"},
-    {"squat", "Back squat (heavy)", "4 x 4-6", 4, "kg", 40, 150,
-     "Couch stretch 90 sec per side first. Leave 2 reps in the tank, never grind.", "Squat"},
-    {"rdl", "Romanian deadlift", "3 x 6", 3, "kg", 50, 120,
-     "Push hips back, deep hamstring stretch, back straight. Leave 2 reps in the tank.", "RDL"},
+    {"squat", "Back squat (heavy)", "4 x 4-6", 4, "kg", 40, 150, "Couch stretch 90 sec per side first. Never grind.",
+     "Squat", "RIR 2"},
+    {"rdl", "Romanian deadlift", "3 x 6", 3, "kg", 50, 120, "Push hips back, deep hamstring stretch, back straight.",
+     "RDL", "RIR 2"},
     {"thrust", "Barbell hip thrust", "3 x 8-10", 3, "kg", 40, 90,
-     "Shoulders on the bench, chin tucked. Squeeze the glutes 1 second at the top.", "Thrust"},
+     "Shoulders on the bench, chin tucked. Squeeze the glutes 1 second at the top.", "Thrust", "RIR 1-2"},
     {"calf", "Standing calf raise (lengthened)", "3 x 12-15", 3, "kg", 20, 60,
-     "Straight knees. Drop the heel as deep as you can, pause 1 second, rise only halfway.", "Calf"},
+     "Straight knees. Drop the heel as deep as you can, pause 1 second, rise only halfway.", "Calf", "RIR 1"},
 };
 constexpr LiftDay GYM[] = {
     {"upa", "Upper A", "Upper A", 1, nullptr, UPPER_A, 6},
-    {"arms", "Arms", "Arms", 3, nullptr, ARMS, 6},
+    {"arms", "Arms", "Arms", 3, nullptr, ARMS, 7},
     {"upb", "Upper B", "Upper B", 5, nullptr, UPPER_B, 6},
     {"legs", "Legs", "Strength", 6, nullptr, LEGS, 5},
 };
@@ -364,6 +373,40 @@ bool Session::isRun() const {
 const LiftDay* gymDays(int& count) {
   count = static_cast<int>(sizeof(GYM) / sizeof(GYM[0]));
   return GYM;
+}
+
+const LiftDay* gymDayForType(const std::string& t) {
+  const char* key = t == "Upper A" || t == "Push"                   ? "upa"
+                    : t == "Arms"                                   ? "arms"
+                    : t == "Strength"                               ? "legs"
+                    : t == "Upper B" || t == "Pull" || t == "Upper" ? "upb"
+                                                                    : nullptr;
+  if (!key) return nullptr;
+  for (const auto& d : GYM) {
+    if (std::strcmp(d.key, key) == 0) return &d;
+  }
+  return nullptr;
+}
+
+const LiftDay* gymDayOn(const std::string& iso, const std::vector<Session>& sessions) {
+  for (const auto& s : sessions) {
+    if (s.date != iso) continue;
+    if (const auto* d = gymDayForType(s.type)) return d;
+  }
+  // The weekday plan starts with this program on 18 Nov and ends with the block.
+  if (iso < "2026-11-18" || iso > "2027-01-17") return nullptr;
+  const int dow = weekday(iso);
+  const LiftDay* plan = nullptr;
+  for (const auto& d : GYM) {
+    if (d.dow == dow) plan = &d;
+  }
+  if (!plan || dow < 0) return nullptr;
+  const std::string monday = addDays(iso, -((dow + 6) % 7));
+  const std::string sunday = addDays(monday, 6);
+  for (const auto& s : sessions) {
+    if (s.date != iso && s.date >= monday && s.date <= sunday && s.type == plan->type) return nullptr;
+  }
+  return plan;
 }
 
 const LiftDay* hyroxDays(int& count) {

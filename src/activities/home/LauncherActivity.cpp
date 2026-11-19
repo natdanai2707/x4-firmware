@@ -136,13 +136,11 @@ void LauncherActivity::buildToday() {
         gymDone = gymDone || ss.done();
       }
     }
-    int n = 0;
-    const auto* days = training::gymDays(n);
-    for (int i = 0; i < n; ++i) {
-      if (days[i].dow != wd) continue;
+    // Today's gym, as Training schedules it from Notion.
+    if (const auto* d = training::gymDayOn(iso, sessions)) {
       int sets = 0;
-      for (int k = 0; k < days[i].count; ++k) sets += days[i].ex[k].sets;
-      today.push_back({App::Training, TrainGymIcon, "GYM", days[i].label, std::to_string(sets) + " sets", gymDone});
+      for (int k = 0; k < d->count; ++k) sets += d->ex[k].sets;
+      today.push_back({App::Training, TrainGymIcon, "GYM", d->label, std::to_string(sets) + " sets", gymDone});
     }
     if (const auto* g = training::gripDay(wd)) {
       std::string names;
@@ -247,7 +245,12 @@ void LauncherActivity::openApp(const App app) {
     LOG_ERR("HOME", "OOM: app screen");
     return;
   }
-  startActivityForResult(std::move(screen), [this](const ActivityResult&) { requestUpdate(); });
+  // A popped screen gets no onEnter: refresh what the app may have changed.
+  startActivityForResult(std::move(screen), [this](const ActivityResult&) {
+    bookPercent = bookPath.empty() ? -1 : loadBookProgress(bookPath);
+    buildToday();
+    requestUpdate();
+  });
 }
 
 void LauncherActivity::openTool(const Tool tool) {

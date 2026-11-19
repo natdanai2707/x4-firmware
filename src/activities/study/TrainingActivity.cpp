@@ -178,17 +178,6 @@ bool isGymType(const std::string& t) {
   return std::any_of(std::begin(GYM_TYPES), std::end(GYM_TYPES), [&](const char* g) { return t == g; });
 }
 
-// The plan's gym day for a logged Notion type, like the phone's GYM_TYPES.
-const training::LiftDay* gymDayForType(const std::string& t) {
-  int n = 0;
-  const auto* days = training::gymDays(n);
-  const char* key = t == "Upper A" || t == "Push" ? "upa" : t == "Arms" ? "arms" : t == "Strength" ? "legs" : "upb";
-  for (int i = 0; i < n; ++i) {
-    if (std::string(days[i].key) == key) return &days[i];
-  }
-  return nullptr;
-}
-
 int setsOf(const training::LiftDay& d) {
   int n = 0;
   for (int i = 0; i < d.count; ++i) n += d.ex[i].sets;
@@ -223,11 +212,8 @@ void TrainingActivity::onEnter() {
   // Default lift days: today's plan.
   const int wd = todayIso.empty() ? -1 : training::weekday(todayIso);
   int gymCount = 0;
-  const training::LiftDay* gymDays = training::gymDays(gymCount);
-  const training::LiftDay* gymDay = &gymDays[0];
-  for (int i = 0; i < gymCount; ++i) {
-    if (gymDays[i].dow == wd) gymDay = &gymDays[i];
-  }
+  const training::LiftDay* gymDay = todayIso.empty() ? nullptr : training::gymDayOn(todayIso, sessions);
+  if (!gymDay) gymDay = &training::gymDays(gymCount)[0];
   openLiftDay(gym, gymDay);
   const training::LiftDay* gripToday = training::gripDay(wd);
   openLiftDay(grip, gripToday ? gripToday : training::gripDay(1));
@@ -303,7 +289,7 @@ std::vector<TrainingActivity::Item> TrainingActivity::itemsOn(const std::string&
       hyroxes.push_back(it);
     } else if (isGymType(s.type)) {
       it.kind = Kind::Gym;
-      it.day = gymDayForType(s.type);
+      it.day = training::gymDayForType(s.type);
       if (it.day) it.text = s.type == "Strength" ? "Legs - Strength" : it.day->label;
       gyms.push_back(it);
     } else if (s.type == "Grip") {
@@ -313,14 +299,10 @@ std::vector<TrainingActivity::Item> TrainingActivity::itemsOn(const std::string&
     }
   }
   const int wd = training::weekday(iso);
+  // No gym row that day: the plan, unless the program moved to another day.
   if (gyms.empty()) {
-    int n = 0;
-    const auto* days = training::gymDays(n);
-    for (int i = 0; i < n; ++i) {
-      if (days[i].dow != wd) continue;
-      Item it{Kind::Gym, days[i].type == std::string("Strength") ? "Legs - Strength" : days[i].label, false, -1,
-              &days[i]};
-      gyms.push_back(it);
+    if (const auto* d = training::gymDayOn(iso, sessions)) {
+      gyms.push_back(Item{Kind::Gym, d->type == std::string("Strength") ? "Legs - Strength" : d->label, false, -1, d});
     }
   }
   if (const auto* g = training::gripDay(wd)) {
@@ -370,6 +352,7 @@ const char* TrainingActivity::liftName(const Lift& l) const {
 void TrainingActivity::openLiftDay(Lift& l, const training::LiftDay* day) {
   l.day = day;
   l.done.assign(day ? day->count : 0, 0);
+  l.rest.assign(day ? day->count : 0, 0);
   l.loads.clear();
   for (int i = 0; day && i < day->count; ++i) l.loads.push_back(training::loadFor(day->ex[i]));
   l.focus = 0;
@@ -383,7 +366,6 @@ void TrainingActivity::startLift(const Tab t, const training::LiftDay* day) {
     Lift& l = lift();
     if (day && day != l.day) {
       openLiftDay(l, day);
-      restUntil = 0;
     }
     if (t == Tab::Gym) gymOpen = true;
   }
@@ -455,12 +437,10 @@ void TrainingActivity::tick(Lift& l, const int exercise, const int box) {
     const bool untick = box >= 0 && box < n;
     n = untick ? box : target;
     l.focus = exercise;
-    if (!untick && n < e.sets && e.rest > 0) {
-      restSeconds = e.rest;
-      restUntil = time(nullptr) + e.rest;
-    } else {
-      restUntil = 0;
-    }
+    // Each exercise keeps its own rest, so a superset partner can rest while
+    // you lift the other.
+    l.rest[exercise] = !untick && n < e.sets && e.rest > 0 ? time(nullptr) + e.rest : 0;
+    if (l.rest[exercise]) nextRedraw = std::min(nextRedraw ? nextRedraw : l.rest[exercise], time(nullptr) + 15);
   }
   saveTicks();
   requestUpdate();
@@ -486,8 +466,8 @@ void TrainingActivity::clearLift(Lift& l) {
   {
     RenderLock lock(*this);
     std::fill(l.done.begin(), l.done.end(), 0);
+    std::fill(l.rest.begin(), l.rest.end(), 0);
     l.focus = 0;
-    restUntil = 0;
   }
   saveTicks();
   requestUpdate();
@@ -497,11 +477,24 @@ void TrainingActivity::primary() {
   Lift& l = gym;
   if (!l.day) return;
   if (l.focus >= l.day->count) return saveLift(l);
-  if (l.done[l.focus] < l.day->ex[l.focus].sets) return tick(l, l.focus, -1);
+  const auto& e = l.day->ex[l.focus];
+  if (l.done[l.focus] < e.sets) {
+    const int at = l.focus;
+    tick(l, at, -1);
+    // Superset: go straight to the partner while this exercise rests.
+    const int partner = e.superset - 1;
+    if (partner >= 0 && partner < l.day->count && l.done[partner] < l.day->ex[partner].sets) {
+      {
+        RenderLock lock(*this);
+        l.focus = partner;
+      }
+      requestUpdate();
+    }
+    return;
+  }
   {
     RenderLock lock(*this);
     l.focus++;
-    restUntil = 0;
   }
   requestUpdate();
 }
@@ -544,18 +537,24 @@ void TrainingActivity::saveLift(Lift& l) {
   training::Change c;
   c.status = (!isGym && !isHyrox) || total == all ? "Done" : "Modified";
 
-  // Legs fills in the week's planned Strength session, like the phone app.
+  // Like the phone app: a Gym or Hyrox row of the same type this week that is
+  // not Done (or Modified) gets this log, preferring today's, and moves to
+  // today when it was planned for another day. No new row in that case.
   training::Session* planned = nullptr;
-  // Hyrox fills in today's planned Hyrox session the same way.
-  if (isGym && std::string(l.day->key) == "legs") {
+  if (isGym || isHyrox) {
+    const std::string mon = mondayOf(todayIso);
+    const std::string sun = training::addDays(mon, 6);
     for (auto& s : sessions) {
-      if (s.type == "Strength" && s.week == week && !s.done() && !s.id.empty()) planned = &s;
+      if (s.type != l.day->type || s.done() || s.id.empty() || s.date < mon || s.date > sun) continue;
+      if (!planned || s.date == todayIso) planned = &s;
     }
   }
-  if (isHyrox) {
-    for (auto& s : sessions) {
-      if (s.type == "Hyrox" && s.date == todayIso && !s.done() && !s.id.empty()) planned = &s;
-    }
+  const bool moved = planned && planned->date != todayIso;
+  if (moved) {
+    c.date = todayIso;
+    c.week = week;
+    planned->date = todayIso;
+    planned->week = week;
   }
   const std::string targetText = isHyrox ? std::to_string(total) + "/" + std::to_string(all) + " rounds"
                                  : isGym ? std::to_string(total) + "/" + std::to_string(all) + " sets"
@@ -605,8 +604,8 @@ void TrainingActivity::saveLift(Lift& l) {
   {
     RenderLock lock(*this);
     std::fill(l.done.begin(), l.done.end(), 0);
+    std::fill(l.rest.begin(), l.rest.end(), 0);
     l.focus = 0;
-    restUntil = 0;
     if (&l == &gym) gymOpen = false;
     syncStatus = "Saved";
   }
@@ -713,6 +712,18 @@ void TrainingActivity::loop() {
     return;
   }
   if (syncing) return;
+  // Rests count down on screen: redraw every 15 s, and when one ends.
+  if (nextRedraw && time(nullptr) >= nextRedraw) {
+    time_t next = 0;
+    const time_t now = time(nullptr);
+    for (const Lift* l : {&gym, &grip}) {
+      for (const time_t r : l->rest) {
+        if (r > now) next = std::min(next ? next : r, std::min(r, now + 15));
+      }
+    }
+    nextRedraw = next;
+    if ((tab == Tab::Gym && gymOpen) || tab == Tab::Grip) requestUpdate();
+  }
   // The Back that closed a child screen must not close this one too.
   if (swallowBack) {
     if (mappedInput.wasReleased(B::Back)) {
@@ -766,10 +777,7 @@ void TrainingActivity::loop() {
     case Tab::Gym:
       if (!gymOpen && confirm) return startLift(Tab::Gym, gym.day);
       if (gymOpen && gym.day && (down || up)) {
-        return update([&] {
-          gym.focus = std::max(0, std::min(gym.day->count, gym.focus + (down ? 1 : -1)));
-          restUntil = 0;
-        });
+        return update([&] { gym.focus = std::max(0, std::min(gym.day->count, gym.focus + (down ? 1 : -1))); });
       }
       if (gymOpen && confirm) return primary();
       break;
@@ -836,10 +844,7 @@ void TrainingActivity::loop() {
           if (tab == Tab::Gym) gymOpen = false;
         });
       case Step:
-        return update([&] {
-          gym.focus = h.a;
-          restUntil = 0;
-        });
+        return update([&] { gym.focus = h.a; });
       case SetBox:
         return tick(lift(), h.a, h.b);
       case LoadDown:
@@ -860,7 +865,6 @@ void TrainingActivity::loop() {
           {
             RenderLock lock(*this);
             openLiftDay(l, day);
-            restUntil = 0;
           }
           saveTicks();
         }
@@ -884,6 +888,27 @@ void TrainingActivity::loop() {
 }
 
 // ---- render ----
+
+int TrainingActivity::restLeft(const Lift& l, const int exercise) {
+  if (exercise < 0 || exercise >= static_cast<int>(l.rest.size()) || l.rest[exercise] == 0) return 0;
+  return std::max(0, static_cast<int>(l.rest[exercise] - time(nullptr)));
+}
+
+// Tags left to right, wrapping to a new line when the row is full.
+void TrainingActivity::tagRow(int& y, const int x, const int width,
+                              const std::vector<std::pair<std::string, bool>>& tags) {
+  const int h = renderer.getLineHeight(SMALL_FONT_ID) + 4;
+  int tx = x;
+  for (const auto& t : tags) {
+    const int tw = tagWidth(renderer, t.first.c_str());
+    if (tx > x && tx + tw > x + width) {
+      tx = x;
+      y += h + 6;
+    }
+    tx += drawTag(renderer, tx, y, t.first.c_str(), t.second) + 8;
+  }
+  y += h;
+}
 
 int TrainingActivity::contentTop() const {
   const auto& m = UITheme::getInstance().getMetrics();
@@ -1313,13 +1338,13 @@ void TrainingActivity::renderGymList(int y) {
   y += GAP;
   int n = 0;
   const auto* days = training::gymDays(n);
-  const int wd = todayIso.empty() ? -1 : training::weekday(todayIso);
+  const training::LiftDay* todayDay = todayIso.empty() ? nullptr : training::gymDayOn(todayIso, sessions);
   for (int i = 0; i < n; ++i) {
     const auto& d = days[i];
     const auto names = renderer.wrappedText(SMALL_FONT_ID, shortNames(d).c_str(), width - 2 * inset, 2);
     const int cardH = inset + bigH + 4 + smallH + 4 + static_cast<int>(names.size()) * smallH + inset;
     if (y + cardH > tabBarTop() - GAP) break;
-    const bool today = d.dow == wd;
+    const bool today = &d == todayDay;
     const bool done =
         loggedThisWeek(d.type, todayIso) && (std::string(d.type) != "Strength" || loggedThisWeek("Strength", todayIso));
     renderer.drawRoundedRect(pad, y, width, cardH, today ? 3 : 2, 14, true);
@@ -1330,8 +1355,20 @@ void TrainingActivity::renderGymList(int y) {
       drawTag(renderer, pad + width - inset - tagWidth(renderer, t), cy + 2, t, today);
     }
     cy += bigH + 4;
-    const std::string meta = std::string(DAYS_LONG[d.dow]) + "  -  " + std::to_string(d.count) + " exercises, " +
-                             std::to_string(setsOf(d)) + " sets";
+    // The day it falls on this week: its Notion row if there is one, else the plan.
+    std::string when = DAYS_LONG[d.dow];
+    if (!todayIso.empty()) {
+      const std::string mon = mondayOf(todayIso);
+      for (int k = 0; k < 7; ++k) {
+        const std::string iso = training::addDays(mon, k);
+        if (training::gymDayOn(iso, sessions) != &d) continue;
+        when = DAYS_LONG[training::weekday(iso)];
+        if (training::weekday(iso) != d.dow) when += " (moved)";
+        break;
+      }
+    }
+    const std::string meta =
+        when + "  -  " + std::to_string(d.count) + " exercises, " + std::to_string(setsOf(d)) + " sets";
     renderer.drawText(SMALL_FONT_ID, pad + inset, cy, meta.c_str(), true, EpdFontFamily::BOLD);
     cy += smallH + 4;
     for (const auto& l : names) {
@@ -1448,13 +1485,25 @@ void TrainingActivity::renderGymStep(int y) {
       const int nh = renderer.getLineHeight(UI_10_FONT_ID);
       const int top = y + (sh - nh - smallH) / 2;
       drawCentered(renderer, UI_10_FONT_ID, sx, top, sw, nh, std::to_string(i + 1).c_str(), !on, EpdFontFamily::BOLD);
-      const std::string sfit =
-          renderer.truncatedText(SMALL_FONT_ID, l.day->ex[i].shortName ? l.day->ex[i].shortName : "", sw - 2);
-      drawCentered(renderer, SMALL_FONT_ID, sx, top + nh, sw, smallH, sfit.c_str(), !on);
+      // A resting exercise shows its time left and a dot in the corner.
+      const int left = restLeft(l, i);
+      const std::string sub = left > 0 ? mmss(left) : l.day->ex[i].shortName ? l.day->ex[i].shortName : "";
+      const std::string sfit = renderer.truncatedText(SMALL_FONT_ID, sub.c_str(), sw - 2);
+      drawCentered(renderer, SMALL_FONT_ID, sx, top + nh, sw, smallH, sfit.c_str(), !on,
+                   left > 0 ? EpdFontFamily::BOLD : EpdFontFamily::REGULAR);
+      if (left > 0) renderer.fillRoundedRect(sx + sw - 13, y + 5, 8, 8, 4, on ? Color::White : Color::Black);
     }
     hits.push_back({sx, y, sx + sw, y + sh, Step, i, 0});
   }
-  y += sh + GAP;
+  // Supersets: a bar under each pair.
+  for (int i = 0; i < l.day->count; ++i) {
+    const int p = l.day->ex[i].superset - 1;
+    if (p <= i || p >= l.day->count) continue;
+    const int x0 = pad + i * (sw + sgap) + 6;
+    const int x1 = pad + p * (sw + sgap) + sw - 6;
+    renderer.fillRect(x0, y + sh + 4, x1 - x0, 4, true);
+  }
+  y += sh + 8 + GAP;
   renderer.drawLine(0, y, w - 1, y, true);
   y += GAP;
 
@@ -1467,11 +1516,12 @@ void TrainingActivity::renderGymStep(int y) {
     for (int i = 0; i < l.day->count && y + lineH < btnY - 70; ++i) {
       const auto& e = l.day->ex[i];
       const int ty = y + (lineH - bodyH) / 2;
-      renderer.drawText(UI_12_FONT_ID, pad, ty, e.name);
       const std::string v = std::to_string(l.done[i]) + "/" + std::to_string(e.sets) +
                             (e.unit[0] ? "   " + loadText(l.loads[i], e.unit) : "");
-      renderer.drawText(UI_12_FONT_ID, w - pad - renderer.getTextWidth(UI_12_FONT_ID, v.c_str(), EpdFontFamily::BOLD),
-                        ty, v.c_str(), true, EpdFontFamily::BOLD);
+      const int vw = renderer.getTextWidth(UI_12_FONT_ID, v.c_str(), EpdFontFamily::BOLD);
+      const std::string name = renderer.truncatedText(UI_12_FONT_ID, e.name, width - vw - 16);
+      renderer.drawText(UI_12_FONT_ID, pad, ty, name.c_str());
+      renderer.drawText(UI_12_FONT_ID, w - pad - vw, ty, v.c_str(), true, EpdFontFamily::BOLD);
       y += lineH;
       renderer.drawLine(pad, y, w - pad, y, true);
     }
@@ -1490,9 +1540,12 @@ void TrainingActivity::renderGymStep(int y) {
     y += bigH;
   }
   y += 6;
-  int tx = pad + drawTag(renderer, pad, y, e.target, true) + 8;
-  if (e.rest > 0) drawTag(renderer, tx, y, ("REST " + mmss(e.rest)).c_str(), false);
-  y += smallH + 4 + GAP;
+  std::vector<std::pair<std::string, bool>> tags = {{e.target, true}};
+  if (e.rir) tags.push_back({e.rir, false});
+  if (e.superset > 0) tags.push_back({"SUPERSET WITH " + std::to_string(e.superset), false});
+  if (e.rest > 0) tags.push_back({"REST " + mmss(e.rest), false});
+  tagRow(y, pad, width, tags);
+  y += GAP;
   if (e.cue) {
     for (const auto& line : renderer.wrappedText(UI_10_FONT_ID, e.cue, width, 3)) {
       renderer.drawText(UI_10_FONT_ID, pad, y, line.c_str());
@@ -1503,15 +1556,18 @@ void TrainingActivity::renderGymStep(int y) {
   y += renderSetRow(pad, y, width, l, l.focus, 64) + GAP;
   y += renderLoadRow(pad, y, width, l, l.focus, e.unit[0] == 's' ? "Hold" : e.unit[0] == 'c' ? "Height" : "Load") + GAP;
 
-  // Rest: when the next set is due. E-ink does not tick, so it shows the time.
+  // Rest of this exercise. Each exercise keeps its own, so a superset partner
+  // rests while you lift; the screen redraws every 15 s.
   const int restH = 64;
   if (y + restH < btnY - GAP) {
-    renderer.drawRoundedRect(pad, y, width, restH, 2, RADIUS, true);
-    const bool resting = restUntil > time(nullptr);
-    renderer.drawText(SMALL_FONT_ID, pad + 14, y + 10, "REST", true, EpdFontFamily::BOLD);
-    const std::string note = resting ? "Next set at " + clockText(restUntil) : "Starts when you tick a set";
+    const int left = restLeft(l, l.focus);
+    renderer.drawRoundedRect(pad, y, width, restH, left > 0 ? 3 : 2, RADIUS, true);
+    renderer.drawText(SMALL_FONT_ID, pad + 14, y + 10, left > 0 ? "RESTING" : "READY", true, EpdFontFamily::BOLD);
+    const std::string note = left > 0                    ? "Next set at " + clockText(l.rest[l.focus])
+                             : l.done[l.focus] >= e.sets ? std::string("All sets done")
+                                                         : "Rest " + mmss(e.rest) + " after each set";
     renderer.drawText(SMALL_FONT_ID, pad + 14, y + 12 + smallH, note.c_str());
-    const std::string big = mmss(resting ? restSeconds : e.rest);
+    const std::string big = left > 0 ? mmss(left) : "Ready";
     renderer.drawText(NOTOSANS_18_FONT_ID,
                       w - pad - 14 - renderer.getTextWidth(NOTOSANS_18_FONT_ID, big.c_str(), EpdFontFamily::BOLD),
                       y + (restH - bigH) / 2, big.c_str(), true, EpdFontFamily::BOLD);
@@ -1582,7 +1638,8 @@ void TrainingActivity::renderGrip(int y) {
     }
     cy += 10;
     cy += renderSetRow(pad + inset, cy, width - 2 * inset, l, i, 52) + 10;
-    const std::string lab = "Load, rest " + mmss(e.rest);
+    const int left = restLeft(l, i);
+    const std::string lab = left > 0 ? "Resting " + mmss(left) : "Ready";
     renderLoadRow(pad + inset, cy, width - 2 * inset, l, i, lab.c_str());
     y += cardH + GAP;
   }

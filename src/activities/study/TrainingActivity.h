@@ -40,7 +40,8 @@ class TrainingActivity final : public Activity {
     const training::LiftDay* day = nullptr;
     std::vector<int> done;  // sets ticked per exercise
     std::vector<float> loads;
-    int focus = 0;  // exercise index; count = Finish
+    std::vector<time_t> rest;  // per exercise: when its rest ends, 0 = ready
+    int focus = 0;             // exercise index; count = Finish
   };
 
   // One line of a Calendar day.
@@ -90,6 +91,8 @@ class TrainingActivity final : public Activity {
   int renderSetRow(int x, int y, int width, const Lift& l, int exercise, int height);
   int renderLoadRow(int x, int y, int width, const Lift& l, int exercise, const char* label);
   std::string syncText() const;
+  static int restLeft(const Lift& l, int exercise);  // seconds, 0 when ready
+  void tagRow(int& y, int x, int width, const std::vector<std::pair<std::string, bool>>& tags);
 
   std::vector<training::Session> sessions;
   std::string todayIso;
@@ -110,8 +113,7 @@ class TrainingActivity final : public Activity {
   Lift gym;
   Lift grip;
   Lift hyrox;
-  time_t restUntil = 0;
-  int restSeconds = 0;
+  time_t nextRedraw = 0;  // when a running rest needs the screen redrawn
 
   // Hit areas from the last render.
   struct Hit {

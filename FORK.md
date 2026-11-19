@@ -174,14 +174,23 @@ Training Hub phone app. Both use the Notion "Sessions" database of
   old or logs are waiting.
 - Run: the week's runs with done and planned km, and weekly mileage. Tap a
   run to log status, distance, pace, average HR, RPE and a note.
-- Gym: Upper A (Mon), Arms (Wed), Upper B (Fri), Legs (Sat), same as the
-  phone app. A session goes one exercise at a time (steps along the top), with
-  the cue, set buttons, load - and + (box jump in cm), and when the rest ends. Save creates a session in Notion; Legs fills in the
-  week's planned Strength session instead.
+- Gym: the phone app's PPL. Upper A (Mon), Arms (Wed, 7 exercises with the
+  wrist curl), Upper B (Fri, cable rope hammer curl), Legs (Sat), with the
+  same order, RIR, cues and push/pull supersets. A session goes one exercise
+  at a time (steps along the top). After a set the next step is the superset
+  partner. Each exercise has its own rest timer: it keeps running when you
+  move to another exercise, a dot and m:ss mark it in the steps, and an
+  exercise not resting shows "Ready".
+- Schedule: a Notion gym row (Upper A, Upper B, Arms, Strength) on a day
+  sets that day's program. The weekday plan (from 18 Nov to the end of the
+  block) applies only when that program has no row elsewhere in the same
+  week, planned, done or skipped.
+- Save (Gym or Hyrox): an open row of the same type in this week is updated
+  and moved to today. A new row is made only when there is none. Replan is
+  done from the phone.
 - Grip: the grip work of each weekday, saved the same way.
 - Hyrox: Mini Hyrox 45 min (6 rounds) or 60 min (8 rounds), a 5 min run before
-  each station. Tick a station when done. No timer. Save fills in today's
-  planned Hyrox session, or creates one.
+  each station. Tick a station when done. No timer.
 - The Run week shows plan sessions only; gym, grip and Hyrox logs stay off it,
   like the phone app.
 
