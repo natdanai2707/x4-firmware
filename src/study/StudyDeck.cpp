@@ -3,6 +3,7 @@
 #include <HalStorage.h>
 #include <Logging.h>
 
+#include <algorithm>
 #include <cstring>
 #include <ctime>
 
@@ -159,7 +160,67 @@ void StudyDeck::splitFields(const char* line, size_t length, std::vector<std::st
 srs::Day StudyDeck::today() {
   const time_t now = time(nullptr);
   if (now < 1577836800) return 0;  // clock not set (before 2020)
-  struct tm local {};
+  struct tm local{};
   localtime_r(&now, &local);
   return srs::dayFromDate(local.tm_year + 1900, local.tm_mon + 1, local.tm_mday);
+}
+
+bool StudyDeck::summary(const std::string& name, Summary& out) {
+  out = Summary{};
+  const std::string tsv = std::string(STUDY_DIR) + "/" + name + ".tsv";
+  const std::string srsPath = std::string(STUDY_DIR) + "/" + name + ".srs";
+  HalFile file;
+  if (!Storage.exists(tsv.c_str()) || !Storage.openFileForRead("STUDY", tsv, file)) return false;
+  // Count card lines in chunks: not empty and not a comment.
+  size_t cards = 0;
+  char buf[512];
+  bool lineStart = true;
+  bool counted = false;
+  while (true) {
+    const int n = file.read(buf, sizeof(buf));
+    if (n <= 0) break;
+    for (int i = 0; i < n; ++i) {
+      const char c = buf[i];
+      if (lineStart) {
+        counted = c != '\n' && c != '\r' && c != '#';
+        if (counted) ++cards;
+        lineStart = false;
+      }
+      if (c == '\n') lineStart = true;
+    }
+  }
+  file.close();
+  const srs::Day today = StudyDeck::today();
+  size_t stored = 0;
+  uint16_t newToday = 0;
+  int learnedNew = 0;
+  if (Storage.exists(srsPath.c_str()) && Storage.openFileForRead("STUDY", srsPath, file)) {
+    ProgressHeader header{};
+    if (file.read(&header, sizeof(header)) == static_cast<int>(sizeof(header)) &&
+        std::memcmp(header.magic, MAGIC, sizeof(MAGIC)) == 0 && header.version == VERSION) {
+      stored = std::min<size_t>(header.cardCount, cards);
+      newToday = header.newDay == today ? header.newToday : 0;
+      srs::CardState st[32];
+      size_t left = stored;
+      while (left > 0) {
+        const size_t take = std::min<size_t>(left, 32);
+        const int bytes = static_cast<int>(take * sizeof(srs::CardState));
+        if (file.read(st, bytes) != bytes) break;
+        for (size_t k = 0; k < take; ++k) {
+          if (srs::isNew(st[k])) {
+            ++learnedNew;
+          } else if (today > 0 && st[k].due <= today) {
+            ++out.reviews;
+          }
+        }
+        left -= take;
+      }
+    }
+    file.close();
+  }
+  const int fresh = learnedNew + static_cast<int>(cards - stored);
+  const srs::SessionLimits limits;
+  out.reviews = std::min<int>(out.reviews, limits.maxReviews);
+  out.fresh = std::max(0, std::min<int>(fresh, limits.newPerDay - newToday));
+  return true;
 }

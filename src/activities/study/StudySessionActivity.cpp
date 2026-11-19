@@ -12,12 +12,14 @@
 
 namespace {
 constexpr const char* ANSWER_LABELS[3] = {"Again", "Good", "Easy"};
-constexpr int ANSWER_ZONE_HEIGHT = 72;
-constexpr int ANSWER_ZONE_GAP = 10;
+constexpr int ANSWER_ZONE_HEIGHT = 76;
+constexpr int ANSWER_ZONE_GAP = 16;
+constexpr int PAD = 16;
+constexpr int ZONE_GAP = 10;
 }  // namespace
 
-StudySessionActivity::StudySessionActivity(GfxRenderer& renderer, MappedInputManager& mappedInput,
-                                           std::string deckName, std::string title)
+StudySessionActivity::StudySessionActivity(GfxRenderer& renderer, MappedInputManager& mappedInput, std::string deckName,
+                                           std::string title)
     : Activity("StudySession", renderer, mappedInput),
       deck(makeUniqueNoThrow<StudyDeck>(std::move(deckName))),
       title(std::move(title)) {}
@@ -40,6 +42,7 @@ void StudySessionActivity::onEnter() {
 
   queue = srs::planSession(deck->states(), today, srs::SessionLimits{}, deck->newIntroducedOn(today));
   plannedCount = queue.size();
+  for (const uint16_t i : queue) (srs::isNew(deck->states()[i]) ? newCount : dueCount)++;
   if (queue.empty()) {
     phase = Phase::NothingDue;
   } else {
@@ -89,6 +92,7 @@ void StudySessionActivity::answer(const srs::Grade grade) {
   state = srs::review(state, grade, today);
   if (wasNew) deck->noteNewIntroduced(today);
   if (position < plannedCount) ++reviewed;  // count each planned card once
+  graded[static_cast<int>(grade)]++;
   if (grade == srs::Grade::Again) queue.push_back(index);
   deck->save();
 
@@ -106,8 +110,8 @@ int StudySessionActivity::answerZoneAt(const int x, const int y) const {
   const auto& metrics = UITheme::getInstance().getMetrics();
   const int top = renderer.getScreenHeight() - metrics.buttonHintsHeight - ANSWER_ZONE_GAP - ANSWER_ZONE_HEIGHT;
   if (y < top || y >= top + ANSWER_ZONE_HEIGHT) return -1;
-  const int width = renderer.getScreenWidth() - 2 * metrics.contentSidePadding;
-  const int col = (x - metrics.contentSidePadding) * 3 / std::max(1, width);
+  const int width = renderer.getScreenWidth() - 2 * PAD;
+  const int col = (x - PAD) * 3 / std::max(1, width);
   return col >= 0 && col < 3 ? col : -1;
 }
 
@@ -168,19 +172,43 @@ std::string StudySessionActivity::nextDueText() const {
   return days == 1 ? "Next review: tomorrow." : "Next review: in " + std::to_string(days) + " days.";
 }
 
+std::string StudySessionActivity::intervalText(const srs::Grade grade) const {
+  if (position >= queue.size()) return "";
+  const auto next = srs::review(deck->states()[queue[position]], grade, today);
+  const int days = next.due > today ? next.due - today : 0;
+  if (days == 0) return "Again today";
+  return days == 1 ? "1 day" : std::to_string(days) + " days";
+}
+
+void StudySessionActivity::renderProgress(const int y, const int width) {
+  const std::string count = std::to_string(std::min(position + 1, queue.size())) + " / " + std::to_string(queue.size());
+  const int cw = renderer.getTextWidth(SMALL_FONT_ID, count.c_str(), EpdFontFamily::BOLD);
+  const int barW = width - cw - 12;
+  const int smallH = renderer.getLineHeight(SMALL_FONT_ID);
+  const int by = y + (smallH - 8) / 2;
+  renderer.fillRoundedRect(PAD, by, barW, 8, 4, Color::LightGray);
+  const int fill = queue.empty() ? 0 : static_cast<int>(barW * std::min(position, queue.size()) / queue.size());
+  if (fill > 0) renderer.fillRoundedRect(PAD, by, std::max(8, fill), 8, 4, Color::Black);
+  renderer.drawText(SMALL_FONT_ID, PAD + width - cw, y, count.c_str(), true, EpdFontFamily::BOLD);
+}
+
 void StudySessionActivity::render(RenderLock&&) {
   renderer.clearScreen();
   const auto& metrics = UITheme::getInstance().getMetrics();
   const int pageWidth = renderer.getScreenWidth();
-  const int width = pageWidth - 2 * metrics.contentSidePadding;
+  const int width = pageWidth - 2 * PAD;
 
-  std::string progress;
+  std::string sub;
   if (phase == Phase::Front || phase == Phase::Back) {
-    progress = std::to_string(position + 1) + " / " + std::to_string(queue.size());
+    sub = std::to_string(dueCount) + " due, " + std::to_string(newCount) + " new";
   }
   GUI.drawHeader(renderer, Rect{0, metrics.topPadding, pageWidth, metrics.headerHeight}, title.c_str(),
-                 progress.empty() ? nullptr : progress.c_str());
-  const int top = metrics.topPadding + metrics.headerHeight + metrics.verticalSpacing * 3;
+                 sub.empty() ? nullptr : sub.c_str());
+  int top = metrics.topPadding + metrics.headerHeight + 12;
+  if (phase == Phase::Front || phase == Phase::Back) {
+    renderProgress(top, width);
+    top += renderer.getLineHeight(SMALL_FONT_ID) + 20;
+  }
 
   const char* btn2 = "";
   const char* btn3 = "";
@@ -197,8 +225,7 @@ void StudySessionActivity::render(RenderLock&&) {
       btn2 = "OK";
       break;
     case Phase::Done:
-      renderMessage(top, width, "Session done",
-                    "Reviewed " + std::to_string(reviewed) + " cards. " + nextDueText());
+      renderMessage(top, width, "Done for today", std::to_string(reviewed) + " cards reviewed. " + nextDueText());
       btn2 = "OK";
       break;
     case Phase::Front:
@@ -219,24 +246,40 @@ void StudySessionActivity::render(RenderLock&&) {
 }
 
 void StudySessionActivity::renderFront(const int top, const int width) {
+  const auto& metrics = UITheme::getInstance().getMetrics();
+  const int zoneTop = renderer.getScreenHeight() - metrics.buttonHintsHeight - ANSWER_ZONE_GAP - ANSWER_ZONE_HEIGHT;
   const int fontId = fontFor(fields[0], true);
   // Built-in fonts look best bold; the study font has one regular face.
   const auto style = fontId == NOTOSANS_18_FONT_ID ? EpdFontFamily::BOLD : EpdFontFamily::REGULAR;
   const int lineHeight = renderer.getLineHeight(fontId);
+  const int smallH = renderer.getLineHeight(SMALL_FONT_ID);
   const auto lines = renderer.wrappedText(fontId, fields[0].c_str(), width, 4);
-  int y = top + (renderer.getScreenHeight() / 2 - top) - static_cast<int>(lines.size()) * lineHeight / 2;
+  const int blockH = smallH + 4 + 16 + static_cast<int>(lines.size()) * lineHeight;
+  int y = top + (zoneTop - top - blockH) / 2;
+  // NEW or REVIEW tag above the word.
+  const bool isNew = position < queue.size() && srs::isNew(deck->states()[queue[position]]);
+  const char* tag = isNew ? "NEW CARD" : "REVIEW";
+  const int tw = renderer.getTextWidth(SMALL_FONT_ID, tag, EpdFontFamily::BOLD) + 14;
+  const int tx = PAD + (width - tw) / 2;
+  renderer.drawRoundedRect(tx, y, tw, smallH + 4, 2, 6, true);
+  renderer.drawText(SMALL_FONT_ID, tx + 7, y + 2, tag, true, EpdFontFamily::BOLD);
+  y += smallH + 4 + 16;
   for (const auto& line : lines) {
     renderer.drawCenteredText(fontId, y, line.c_str(), true, style);
     y += lineHeight;
   }
-  y += renderer.getLineHeight(NOTOSANS_18_FONT_ID);
-  renderer.drawCenteredText(SMALL_FONT_ID, y, "Tap to show answer");
+  renderer.fillRoundedRect(PAD, zoneTop, width, ANSWER_ZONE_HEIGHT, 14, Color::Black);
+  const int bodyH = renderer.getLineHeight(UI_12_FONT_ID);
+  const char* show = "Show answer";
+  renderer.drawText(UI_12_FONT_ID, PAD + (width - renderer.getTextWidth(UI_12_FONT_ID, show, EpdFontFamily::BOLD)) / 2,
+                    zoneTop + (ANSWER_ZONE_HEIGHT - bodyH) / 2, show, false, EpdFontFamily::BOLD);
 }
 
 void StudySessionActivity::renderBack(const int top, const int width) {
   const auto& metrics = UITheme::getInstance().getMetrics();
-  const int x = metrics.contentSidePadding;
+  const int x = PAD;
   const int bodyHeight = renderer.getLineHeight(UI_12_FONT_ID);
+  const int smallH = renderer.getLineHeight(SMALL_FONT_ID);
   const int zoneTop = renderer.getScreenHeight() - metrics.buttonHintsHeight - ANSWER_ZONE_GAP - ANSWER_ZONE_HEIGHT;
 
   int y = top;
@@ -247,45 +290,80 @@ void StudySessionActivity::renderBack(const int top, const int width) {
     renderer.drawText(frontId, x, y, line.c_str(), true, frontStyle);
     y += frontHeight;
   }
-  y += metrics.verticalSpacing;
-  renderer.drawLine(x, y, x + width, y);
-  y += metrics.verticalSpacing * 2;
+  y += 8;
+  renderer.drawLine(x, y, x + width, y, 2, true);
+  y += 16;
 
   for (size_t f = 1; f < fields.size(); ++f) {
     const int fontId = fontFor(fields[f], false);
     const int lineHeight = renderer.getLineHeight(fontId);
-    // Meaning regular; later fields (examples) italic where the font has it.
-    const auto style = f == 1 || fontId != UI_12_FONT_ID ? EpdFontFamily::REGULAR : EpdFontFamily::ITALIC;
+    // Meaning bold; later fields (examples) regular, italic where the font has it.
+    const auto style = fontId != UI_12_FONT_ID ? EpdFontFamily::REGULAR
+                       : f == 1                ? EpdFontFamily::BOLD
+                                               : EpdFontFamily::ITALIC;
     for (const auto& line : renderer.wrappedText(fontId, fields[f].c_str(), width, 6)) {
-      if (y + lineHeight > zoneTop - metrics.verticalSpacing) break;
+      if (y + lineHeight > zoneTop - 12) break;
       renderer.drawText(fontId, x, y, line.c_str(), true, style);
       y += lineHeight;
     }
-    y += metrics.verticalSpacing * 2;
+    y += 14;
   }
 
-  // Touch targets, matched by answerZoneAt().
-  const int zoneWidth = width / 3;
+  // Grade buttons, matched by answerZoneAt(); each says when the card returns.
+  const int zoneWidth = (width - 2 * ZONE_GAP) / 3;
   for (int i = 0; i < 3; ++i) {
-    const int zx = x + i * zoneWidth + 4;
-    const int zw = zoneWidth - 8;
-    renderer.drawRoundedRect(zx, zoneTop, zw, ANSWER_ZONE_HEIGHT, 2, 10, true);
+    const int zx = x + i * (zoneWidth + ZONE_GAP);
+    const bool primary = i == 1;
+    if (primary) {
+      renderer.fillRoundedRect(zx, zoneTop, zoneWidth, ANSWER_ZONE_HEIGHT, 14, Color::Black);
+    } else {
+      renderer.drawRoundedRect(zx, zoneTop, zoneWidth, ANSWER_ZONE_HEIGHT, 2, 14, true);
+    }
+    const std::string when = intervalText(static_cast<srs::Grade>(i));
+    const int blockH = bodyHeight + smallH;
+    const int ty = zoneTop + (ANSWER_ZONE_HEIGHT - blockH) / 2;
     const int textW = renderer.getTextWidth(UI_12_FONT_ID, ANSWER_LABELS[i], EpdFontFamily::BOLD);
-    renderer.drawText(UI_12_FONT_ID, zx + (zw - textW) / 2, zoneTop + (ANSWER_ZONE_HEIGHT - bodyHeight) / 2,
-                      ANSWER_LABELS[i], true, EpdFontFamily::BOLD);
+    renderer.drawText(UI_12_FONT_ID, zx + (zoneWidth - textW) / 2, ty, ANSWER_LABELS[i], !primary, EpdFontFamily::BOLD);
+    const int ww = renderer.getTextWidth(SMALL_FONT_ID, when.c_str());
+    renderer.drawText(SMALL_FONT_ID, zx + (zoneWidth - ww) / 2, ty + bodyHeight, when.c_str(), !primary);
   }
 }
 
-void StudySessionActivity::renderMessage(const int top, const int width, const char* heading,
-                                         const std::string& body) {
+void StudySessionActivity::renderMessage(const int top, const int width, const char* heading, const std::string& body) {
   const auto& metrics = UITheme::getInstance().getMetrics();
-  const int x = metrics.contentSidePadding;
+  const int x = PAD;
   const int lineHeight = renderer.getLineHeight(UI_12_FONT_ID);
-  int y = top + metrics.verticalSpacing * 4;
-  renderer.drawText(UI_12_FONT_ID, x, y, heading, true, EpdFontFamily::BOLD);
-  y += lineHeight + metrics.verticalSpacing;
+  const int bigH = renderer.getLineHeight(NOTOSANS_18_FONT_ID);
+  const int smallH = renderer.getLineHeight(SMALL_FONT_ID);
+  int y = top + 28;
+  // A check mark box, then the heading.
+  renderer.fillRoundedRect(x, y, 64, 64, 18, Color::Black);
+  renderer.drawLine(x + 18, y + 33, x + 28, y + 43, 4, false);
+  renderer.drawLine(x + 28, y + 43, x + 47, y + 22, 4, false);
+  y += 64 + 20;
+  renderer.drawText(NOTOSANS_18_FONT_ID, x, y, heading, true, EpdFontFamily::BOLD);
+  y += bigH + 10;
   for (const auto& line : renderer.wrappedText(UI_12_FONT_ID, body.c_str(), width, 8)) {
     renderer.drawText(UI_12_FONT_ID, x, y, line.c_str());
     y += lineHeight;
   }
+  if (phase == Phase::Done) {
+    y += 18;
+    const int boxH = smallH + bigH + 18;
+    const int cw = width / 3;
+    renderer.drawRoundedRect(x, y, width, boxH, 2, 12, true);
+    for (int i = 0; i < 3; ++i) {
+      const int cx = x + i * cw;
+      if (i) renderer.drawLine(cx, y, cx, y + boxH - 1, 2, true);
+      renderer.drawText(SMALL_FONT_ID, cx + 12, y + 6, ANSWER_LABELS[i]);
+      renderer.drawText(NOTOSANS_18_FONT_ID, cx + 12, y + 8 + smallH, std::to_string(graded[i]).c_str(), true,
+                        EpdFontFamily::BOLD);
+    }
+  }
+  // Back to Home.
+  const int by = renderer.getScreenHeight() - metrics.buttonHintsHeight - ANSWER_ZONE_GAP - 60;
+  renderer.drawRoundedRect(x, by, width, 60, 2, 14, true);
+  const char* back = "Back to Home";
+  renderer.drawText(UI_12_FONT_ID, x + (width - renderer.getTextWidth(UI_12_FONT_ID, back, EpdFontFamily::BOLD)) / 2,
+                    by + (60 - lineHeight) / 2, back, true, EpdFontFamily::BOLD);
 }

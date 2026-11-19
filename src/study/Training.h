@@ -36,7 +36,9 @@ struct Exercise {
   int sets;
   const char* unit;  // "kg", "s", "cm", or "" for bodyweight
   float def;
-  int rest;  // seconds
+  int rest;                         // seconds
+  const char* cue = nullptr;        // coaching cue, or the Hyrox substitute note
+  const char* shortName = nullptr;  // step strip label
 };
 
 struct LiftDay {

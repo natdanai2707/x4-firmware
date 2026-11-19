@@ -5,10 +5,10 @@
 
 #include "activities/Activity.h"
 
-// App-style home: clock, a Continue reading card and a grid of apps
-// that open directly. Device tools (Browse Files, Library, File Transfer,
-// Settings) live in a drawer that slides in from the right edge; the Back
-// button also opens and closes it.
+// App-style home: clock, a Today card with what is due in each app, a
+// Continue reading card and a row of apps that open directly. Device tools
+// (Browse Files, Library, File Transfer, Settings) live in a drawer that
+// slides in from the right edge; the menu button and Back also open it.
 class LauncherActivity final : public Activity {
  public:
   LauncherActivity(GfxRenderer& renderer, MappedInputManager& mappedInput);
@@ -29,18 +29,27 @@ class LauncherActivity final : public Activity {
   int tileAt(int x, int y) const;  // App index or -1
   int toolAt(int x, int y) const;  // Tool index or -1
 
-  // Layout, shared by render() and touch hit tests.
-  int cardTop() const;
-  int cardHeight() const { return cardH; }
-  int gridTop() const { return cardTop() + cardHeight() + SECTION_GAP; }
-  int tileSize() const;
-  int tileHeight() const;
-  void measureCard();  // sets cardH from the book title and author
+  // One line of the Today card; tapping it opens `app`.
+  struct TodayRow {
+    App app;
+    const uint8_t* icon;
+    std::string label;
+    std::string text;
+    std::string meta;
+    bool done = false;
+  };
+  void buildToday();
 
-  static constexpr int INSET = 18;        // padding inside cards and tiles
-  static constexpr int SECTION_GAP = 24;  // space between blocks
-  int cardH = 120;
-  std::vector<std::string> titleLines;
+  // Layout, set by render() and used by touch hit tests.
+  struct Box {
+    int x0 = 0, y0 = 0, x1 = 0, y1 = 0;
+    bool has(int x, int y) const { return x >= x0 && x < x1 && y >= y0 && y < y1; }
+  };
+  std::vector<TodayRow> today;
+  std::vector<Box> rowBoxes;
+  Box menuBox;
+  Box cardBox;
+  Box tileBoxes[4];
   int drawerLeft() const;
 
   std::string bookTitle;

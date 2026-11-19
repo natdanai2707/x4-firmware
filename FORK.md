@@ -125,9 +125,11 @@ works for English books, and it lets the menus and Compound briefs show Thai.
 
 ## Home
 
-Home shows the clock, a Continue reading card and app tiles (Compound,
-IELTS, Chinese, Training). A tile opens its app directly. Swipe in from the
-right edge, or press Back, for the device menu: Browse Files, Library, File
+Home shows the clock, a Today card (today's run, gym and grip, IELTS and
+Chinese cards due, today's Compound brief; struck through when done), a
+Continue reading card and app tiles (Compound, IELTS, Chinese, Training). A
+row or tile opens its app. The menu button, a swipe in from the right edge,
+or Back open the device menu: Browse Files, Library, File
 Transfer (USB, WiFi), Settings. `src/activities/home/LauncherActivity.*`
 replaces the list home; `HomeActivity` is no longer used.
 
@@ -162,13 +164,16 @@ The Training app (`src/activities/study/TrainingActivity.*`,
 Training Hub phone app. Both use the Notion "Sessions" database of
 "10k Plan: Block 1", so phone and device stay in step.
 
-- The app opens on a picker: Run, Gym, Grip, Hyrox. It does not use WiFi;
-  only Run syncs on open. Back from a tab returns to the picker.
-- Run: week strip and the sessions of the chosen day. Tap a session to log
-  status, distance, pace, average HR, RPE and a note.
+- The app opens on the Calendar: the week with what each day holds (runs and
+  Hyrox from Notion, the gym and grip plan), ticked when logged. Tap a day for
+  its cards (Log run, Start gym, Start grip). It never turns WiFi on; the
+  header's sync status syncs on tap, and Run syncs on open when the plan is
+  old or logs are waiting.
+- Run: the week's runs with done and planned km, and weekly mileage. Tap a
+  run to log status, distance, pace, average HR, RPE and a note.
 - Gym: Upper A (Mon), Arms (Wed), Upper B (Fri), Legs (Sat), same as the
-  phone app. Tick sets, change loads with - and + (box jump in cm). A ticked set
-  shows when the rest ends. Save creates a session in Notion; Legs fills in the
+  phone app. A session goes one exercise at a time (steps along the top), with
+  the cue, set buttons, load - and + (box jump in cm), and when the rest ends. Save creates a session in Notion; Legs fills in the
   week's planned Strength session instead.
 - Grip: the grip work of each weekday, saved the same way.
 - Hyrox: Mini Hyrox 45 min (6 rounds) or 60 min (8 rounds), a 5 min run before
@@ -200,3 +205,9 @@ Notion writes it rejects as invalid go to `/.crosspoint/training/rejected.tsv`.
 - `tools/crosspoint-simulator/src/HalDisplay.h`, `HalStorage.h`: stubbed
   `controllerName()`, `sdTotalBytes()`, `sdUsedBytes()` that current firmware calls
   but the simulator did not yet provide.
+
+## Sleep screen
+
+Every sleep mode shows a text-only quote (Eliud Kipchoge on discipline),
+white on black, drawn by `SleepActivity::renderQuoteSleepScreen()`. Sleep
+images on the card are no longer used.

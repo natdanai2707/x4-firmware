@@ -44,6 +44,15 @@ class StudyDeck {
   // Today as a local Day, or 0 when the clock is not set.
   static srs::Day today();
 
+  // Cards a session would show today (due reviews, then new cards), counted
+  // from the progress file and the card file's line count without indexing
+  // the deck. False when the deck file is missing.
+  struct Summary {
+    int reviews = 0;
+    int fresh = 0;
+  };
+  static bool summary(const std::string& name, Summary& out);
+
   // Split one TSV line into fields (exposed for tests).
   static void splitFields(const char* line, size_t length, std::vector<std::string>& fields);
 

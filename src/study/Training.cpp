@@ -42,35 +42,60 @@ constexpr int WINDOW_AHEAD = 14;
 // Upper/lower split, same as the phone app: Upper A Mon, Arms Wed, Upper B Fri,
 // Legs Sat. Legs is the plan's Strength session.
 constexpr Exercise UPPER_A[] = {
-    {"incdb", "Incline dumbbell press", "4 x 6-10", 4, "kg", 18, 150},
-    {"pullup", "Pull-up or lat pulldown", "4 x 6-10", 4, "kg", 0, 120},
-    {"bench", "Bench press", "3 x 6-8", 3, "kg", 50, 150},
-    {"csrow", "Chest-supported row", "3 x 8-10", 3, "kg", 40, 90},
-    {"lat", "Cable lateral raise", "3 x 12-15", 3, "kg", 7, 60},
-    {"ohtri", "Overhead cable triceps extension", "3 x 10-12", 3, "kg", 20, 60},
+    {"incdb", "Incline dumbbell press", "4 x 6-10", 4, "kg", 18, 150,
+     "Heavy day. Bench at 30 degrees, no higher. Lower deep for a full chest stretch. Leave 1-2 reps in the tank.",
+     "Incline"},
+    {"pullup", "Pull-up or lat pulldown", "4 x 6-10", 4, "kg", 0, 120,
+     "Full hang at the bottom, shoulders down first, chest to the bar.", "Pull"},
+    {"bench", "Bench press", "3 x 6-8", 3, "kg", 50, 150,
+     "Squeeze shoulder blades, feet planted. Lower slowly to the chest.", "Bench"},
+    {"csrow", "Chest-supported row", "3 x 8-10", 3, "kg", 40, 90,
+     "Let the shoulder blades stretch forward, then drive elbows back. Squeeze 1 second.", "Row"},
+    {"lat", "Cable lateral raise", "3 x 12-15", 3, "kg", 7, 60,
+     "Both arms together. Raise to shoulder height, no swinging. Last set: failure, then 5 bottom-half partials.",
+     "Lateral"},
+    {"ohtri", "Overhead cable triceps extension", "3 x 10-12", 3, "kg", 20, 60,
+     "Face away from the cable, elbows up, rope deep behind the head. The stretch grows the long head.", "Triceps"},
 };
 constexpr Exercise ARMS[] = {
-    {"lat", "Cable lateral raise", "4 x 12-15", 4, "kg", 7, 60},
-    {"inccurl", "Incline dumbbell curl", "4 x 8-12", 4, "kg", 9, 75},
-    {"ohtri", "Overhead cable triceps extension", "4 x 8-12", 4, "kg", 20, 75},
-    {"preacher", "EZ-bar preacher curl", "3 x 8-12", 3, "kg", 20, 60},
-    {"push", "Triceps rope pushdown", "3 x 10-12", 3, "kg", 20, 60},
-    {"rpec", "Reverse pec deck or face pull", "3 x 15", 3, "kg", 15, 60},
+    {"lat", "Cable lateral raise", "4 x 12-15", 4, "kg", 7, 60,
+     "Fresh delts first. Last set: failure, then 5 bottom-half partials.", "Lateral"},
+    {"inccurl", "Incline dumbbell curl", "4 x 8-12", 4, "kg", 9, 75,
+     "Both arms together. Bench at 45 degrees, arms hang behind the body. Last set: failure, then partials.", "Curl"},
+    {"ohtri", "Overhead cable triceps extension", "4 x 8-12", 4, "kg", 20, 75,
+     "Elbows up, rope deep behind the head. Go heavier than on Upper A.", "Triceps"},
+    {"preacher", "EZ-bar preacher curl", "3 x 8-12", 3, "kg", 20, 60,
+     "Lower all the way to a straight arm, slow. The bottom half is where the growth is.", "Preacher"},
+    {"push", "Triceps rope pushdown", "3 x 10-12", 3, "kg", 20, 60, "Elbows still at your sides. Last set to failure.",
+     "Pushdown"},
+    {"rpec", "Reverse pec deck or face pull", "3 x 15", 3, "kg", 15, 60,
+     "Rear delts. Arms long, sweep back, pause 1 second.", "Rear delt"},
 };
 constexpr Exercise UPPER_B[] = {
-    {"chestpress", "Dumbbell or machine chest press", "3 x 8-12", 3, "kg", 20, 90},
-    {"fly", "Low-to-high cable fly", "3 x 12-15", 3, "kg", 7.5f, 60},
-    {"pulldown", "Lat pulldown", "3 x 10-12", 3, "kg", 40, 90},
-    {"crow", "Seated cable row", "3 x 10-12", 3, "kg", 40, 90},
-    {"lat", "Cable lateral raise", "4 x 12-15", 4, "kg", 7, 60},
-    {"ccurl", "Cable curl (both arms)", "3 x 10-12", 3, "kg", 15, 60},
+    {"chestpress", "Dumbbell or machine chest press", "3 x 8-12", 3, "kg", 20, 90,
+     "Volume day. Deep stretch at the bottom, smooth press.", "Press"},
+    {"fly", "Low-to-high cable fly", "3 x 12-15", 3, "kg", 7.5f, 60,
+     "Both arms together. Cables low, sweep up to chin height. Upper chest.", "Fly"},
+    {"pulldown", "Lat pulldown", "3 x 10-12", 3, "kg", 40, 90, "Full stretch at the top, pull elbows down to the ribs.",
+     "Pulldown"},
+    {"crow", "Seated cable row", "3 x 10-12", 3, "kg", 40, 90,
+     "Both arms. Reach forward for the lat stretch, then pull to the belly.", "Row"},
+    {"lat", "Cable lateral raise", "4 x 12-15", 4, "kg", 7, 60, "Last set: failure, then 5 bottom-half partials.",
+     "Lateral"},
+    {"ccurl", "Cable curl (both arms)", "3 x 10-12", 3, "kg", 15, 60,
+     "Step back so the cable pulls the arms slightly behind you at the bottom. Full stretch.", "Curl"},
 };
 constexpr Exercise LEGS[] = {
-    {"boxjump", "Box jump", "3 x 5", 3, "cm", 50, 90},
-    {"squat", "Back squat (heavy)", "4 x 4-6", 4, "kg", 40, 150},
-    {"rdl", "Romanian deadlift", "3 x 6", 3, "kg", 50, 120},
-    {"thrust", "Barbell hip thrust", "3 x 8-10", 3, "kg", 40, 90},
-    {"calf", "Standing calf raise (lengthened)", "3 x 12-15", 3, "kg", 20, 60},
+    {"boxjump", "Box jump", "3 x 5", 3, "cm", 50, 90, "First, while fresh. Jump with both feet, land soft. Step down.",
+     "Box jump"},
+    {"squat", "Back squat (heavy)", "4 x 4-6", 4, "kg", 40, 150,
+     "Couch stretch 90 sec per side first. Leave 2 reps in the tank, never grind.", "Squat"},
+    {"rdl", "Romanian deadlift", "3 x 6", 3, "kg", 50, 120,
+     "Push hips back, deep hamstring stretch, back straight. Leave 2 reps in the tank.", "RDL"},
+    {"thrust", "Barbell hip thrust", "3 x 8-10", 3, "kg", 40, 90,
+     "Shoulders on the bench, chin tucked. Squeeze the glutes 1 second at the top.", "Thrust"},
+    {"calf", "Standing calf raise (lengthened)", "3 x 12-15", 3, "kg", 20, 60,
+     "Straight knees. Drop the heel as deep as you can, pause 1 second, rise only halfway.", "Calf"},
 };
 constexpr LiftDay GYM[] = {
     {"upa", "Upper A", "Upper A", 1, nullptr, UPPER_A, 6},
@@ -79,12 +104,17 @@ constexpr LiftDay GYM[] = {
     {"legs", "Legs", "Strength", 6, nullptr, LEGS, 5},
 };
 
-constexpr Exercise GRIP_MON[] = {{"wrist", "Wrist curl", "5 x 15-25", 5, "kg", 5, 60}};
-constexpr Exercise GRIP_TUE[] = {{"hammer", "Hammer curl", "4 x 12-15", 4, "kg", 8, 60}};
-constexpr Exercise GRIP_WED[] = {{"hang", "Dead hang / block lift", "5 x 20-30s", 5, "s", 25, 90}};
-constexpr Exercise GRIP_THU[] = {{"rwrist", "Reverse wrist curl", "3 x 20", 3, "kg", 3, 45},
-                                 {"hammer", "Hammer curl", "3 x 12", 3, "kg", 8, 60}};
-constexpr Exercise GRIP_FRI[] = {{"finger", "Finger curl", "4 x 20", 4, "kg", 5, 60}};
+constexpr Exercise GRIP_MON[] = {
+    {"wrist", "Wrist curl", "5 x 15-25", 5, "kg", 5, 60, "Forearm on knee, palm up. Lower for 3 seconds."}};
+constexpr Exercise GRIP_TUE[] = {
+    {"hammer", "Hammer curl", "4 x 12-15", 4, "kg", 8, 60, "Elbows at your sides. Builds the top of the forearm."}};
+constexpr Exercise GRIP_WED[] = {{"hang", "Dead hang / block lift", "5 x 20-30s", 5, "s", 25, 90,
+                                  "Open hand, shoulders locked. Stop short of failure."}};
+constexpr Exercise GRIP_THU[] = {
+    {"rwrist", "Reverse wrist curl", "3 x 20", 3, "kg", 3, 45, "Palm down, light weight. Balances the elbow."},
+    {"hammer", "Hammer curl", "3 x 12", 3, "kg", 8, 60, "Elbows at your sides. Builds the top of the forearm."}};
+constexpr Exercise GRIP_FRI[] = {{"finger", "Finger curl", "4 x 20", 4, "kg", 5, 60,
+                                  "Let the dumbbell roll to your fingertips, then close the hand."}};
 constexpr LiftDay GRIP[] = {
     {"mon", "Mon", "Grip", 1, nullptr, GRIP_MON, 1}, {"tue", "Tue", "Grip", 2, nullptr, GRIP_TUE, 1},
     {"wed", "Wed", "Grip", 3, nullptr, GRIP_WED, 1}, {"thu", "Thu", "Grip", 4, nullptr, GRIP_THU, 2},
@@ -94,22 +124,22 @@ constexpr LiftDay GRIP[] = {
 // Station loads are remembered apart from the gym ones (hx_ keys). Each round
 // is a 5 min run, then the station.
 constexpr Exercise HYROX_45[] = {
-    {"hx_swing", "Kettlebell swing", "50 reps", 1, "kg", 16, 0},
-    {"hx_bagsquat", "Sandbag squat (bear hug)", "30 reps", 1, "kg", 20, 0},
-    {"hx_burpee", "Burpee", "25 reps", 1, "", 0, 0},
-    {"hx_farmer", "Farmer carry", "90 sec", 1, "kg", 20, 0},
-    {"hx_lunge", "Sandbag lunge", "40 reps", 1, "kg", 20, 0},
-    {"hx_thruster", "Dumbbell thruster", "30 reps", 1, "kg", 10, 0},
+    {"hx_swing", "Kettlebell swing", "50 reps", 1, "kg", 16, 0, "SkiErg substitute"},
+    {"hx_bagsquat", "Sandbag squat (bear hug)", "30 reps", 1, "kg", 20, 0, "Sled push substitute"},
+    {"hx_burpee", "Burpee", "25 reps", 1, "", 0, 0, "In place"},
+    {"hx_farmer", "Farmer carry", "90 sec", 1, "kg", 20, 0, "Walk forward and back"},
+    {"hx_lunge", "Sandbag lunge", "40 reps", 1, "kg", 20, 0, "In place"},
+    {"hx_thruster", "Dumbbell thruster", "30 reps", 1, "kg", 10, 0, "Wall ball substitute"},
 };
 constexpr Exercise HYROX_60[] = {
-    {"hx_swing", "Kettlebell swing", "50 reps", 1, "kg", 16, 0},
-    {"hx_bagsquat", "Sandbag squat (bear hug)", "30 reps", 1, "kg", 20, 0},
-    {"hx_row", "Dumbbell bent-over row", "40 reps", 1, "kg", 12, 0},
-    {"hx_burpee", "Burpee", "25 reps", 1, "", 0, 0},
-    {"hx_highpull", "Kettlebell high pull", "40 reps", 1, "kg", 16, 0},
-    {"hx_farmer", "Farmer carry", "2 min", 1, "kg", 20, 0},
-    {"hx_lunge", "Sandbag lunge", "40 reps", 1, "kg", 20, 0},
-    {"hx_thruster", "Dumbbell thruster", "40 reps", 1, "kg", 10, 0},
+    {"hx_swing", "Kettlebell swing", "50 reps", 1, "kg", 16, 0, "SkiErg substitute"},
+    {"hx_bagsquat", "Sandbag squat (bear hug)", "30 reps", 1, "kg", 20, 0, "Sled push substitute"},
+    {"hx_row", "Dumbbell bent-over row", "40 reps", 1, "kg", 12, 0, "Sled pull substitute"},
+    {"hx_burpee", "Burpee", "25 reps", 1, "", 0, 0, "In place"},
+    {"hx_highpull", "Kettlebell high pull", "40 reps", 1, "kg", 16, 0, "Rowing substitute"},
+    {"hx_farmer", "Farmer carry", "2 min", 1, "kg", 20, 0, "Walk forward and back"},
+    {"hx_lunge", "Sandbag lunge", "40 reps", 1, "kg", 20, 0, "In place"},
+    {"hx_thruster", "Dumbbell thruster", "40 reps", 1, "kg", 10, 0, "Wall ball substitute"},
 };
 constexpr LiftDay HYROX[] = {
     {"p45", "45 min", "Hyrox", -1, "6 rounds. Run 5 min, then the station.", HYROX_45, 6},

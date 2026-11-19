@@ -13,6 +13,7 @@ class SleepActivity final : public Activity {
   void onEnter() override;
 
  private:
+  void renderQuoteSleepScreen() const;
   void renderDefaultSleepScreen() const;
   void renderCustomSleepScreen() const;
   bool renderCustomSleepBmp(const std::string& path) const;

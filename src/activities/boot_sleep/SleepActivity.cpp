@@ -686,6 +686,17 @@ void releaseSdFontCachesForDecode(const GfxRenderer& renderer) {
 void SleepActivity::onEnter() {
   Activity::onEnter();
 
+  // Every sleep mode shows the quote: type only, no image (Surf's choice).
+  display.setInverted(false);
+  if (APP_STATE.lastSleepFromReader) {
+    ReaderUtils::applyOrientation(renderer, SETTINGS.orientation);
+    GUI.drawPopup(renderer, tr(STR_ENTERING_SLEEP));
+    renderer.setOrientation(GfxRenderer::Orientation::Portrait);
+  } else {
+    GUI.drawPopup(renderer, tr(STR_ENTERING_SLEEP));
+  }
+  return renderQuoteSleepScreen();
+
   const bool renderQuickResume =
       SETTINGS.sleepScreen == CrossPointSettings::SLEEP_SCREEN_MODE::QUICK_RESUME ||
       (fromTimeout &&
@@ -819,6 +830,88 @@ void SleepActivity::renderCustomSleepScreen() const {
 // firmware's only clean refresh in normal operation is the single-pass 0xD7
 // sequence, used once for the sleep image. It never runs the multi-flash GC
 // waveform (0xF7) that FULL_REFRESH selects (#2471's blinking complaint).
+// White type on black, laid out for the portrait screen. Emphasis words are
+// bold italic, as on the poster the quote comes from.
+void SleepActivity::renderQuoteSleepScreen() const {
+  struct Part {
+    const char* text;
+    bool strong;
+    bool breakAfter;
+  };
+  static constexpr Part QUOTE[] = {
+      {"Only the", false, false},
+      {"disciplined ones are free in life.", true, true},
+      {"If you are undisciplined, you are a", false, false},
+      {"slave to your moods", true, false},
+      {"and your passions.", false, false},
+  };
+  const int w = renderer.getScreenWidth();
+  const int h = renderer.getScreenHeight();
+  const int left = 44;
+  const int maxW = w - 2 * left;
+  const int font = NOTOSANS_18_FONT_ID;
+  const int lineH = renderer.getLineHeight(font) + 6;
+  // A lone space measures 0, so take it from a pair of words.
+  const int space = renderer.getTextWidth(font, "a a") - renderer.getTextWidth(font, "aa");
+
+  // Word wrap across the styled parts.
+  struct Word {
+    std::string text;
+    bool strong;
+    int x;
+    int line;
+  };
+  std::vector<Word> words;
+  int x = 0;
+  int line = 0;
+  for (const auto& p : QUOTE) {
+    const auto style = p.strong ? EpdFontFamily::BOLD_ITALIC : EpdFontFamily::REGULAR;
+    const char* s = p.text;
+    while (*s) {
+      const char* e = s;
+      while (*e && *e != ' ') ++e;
+      std::string word(s, e - s);
+      const int ww = renderer.getTextWidth(font, word.c_str(), style);
+      if (x > 0 && x + space + ww > maxW) {
+        x = 0;
+        ++line;
+      }
+      if (x > 0) x += space;
+      words.push_back({word, p.strong, x, line});
+      x += ww;
+      s = *e ? e + 1 : e;
+    }
+    if (p.breakAfter) {
+      x = 0;
+      ++line;
+    }
+  }
+  const int lines = line + 1;
+
+  const int markH = 64;
+  const int nameH = renderer.getLineHeight(NOTOSANS_16_FONT_ID);
+  const int blockH = markH + 28 + lines * lineH + 36 + 4 + 18 + nameH;
+  int y = (h - blockH) / 2;
+
+  renderer.fillRect(0, 0, w, h, true);
+  // Opening quote mark: two filled dots with tails.
+  for (int i = 0; i < 2; ++i) {
+    const int mx = left + i * 46;
+    renderer.fillRoundedRect(mx, y + markH - 36, 36, 36, 18, Color::White);
+    renderer.drawLine(mx + 6, y + markH - 22, mx + 26, y + 2, 12, false);
+  }
+  y += markH + 28;
+  for (const auto& wd : words) {
+    renderer.drawText(font, left + wd.x, y + wd.line * lineH, wd.text.c_str(), false,
+                      wd.strong ? EpdFontFamily::BOLD_ITALIC : EpdFontFamily::REGULAR);
+  }
+  y += lines * lineH + 36;
+  renderer.fillRect(left, y, 48, 4, false);
+  y += 4 + 18;
+  renderer.drawText(NOTOSANS_16_FONT_ID, left, y, "Eliud Kipchoge", false, EpdFontFamily::BOLD);
+  renderer.displayBuffer(kSleepClean);
+}
+
 void SleepActivity::renderDefaultSleepScreen() const {
   const auto pageWidth = renderer.getScreenWidth();
   const auto pageHeight = renderer.getScreenHeight();

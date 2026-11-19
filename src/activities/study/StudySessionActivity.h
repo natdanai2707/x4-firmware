@@ -13,8 +13,7 @@
 // every answer, so leaving midway loses nothing.
 class StudySessionActivity final : public Activity {
  public:
-  StudySessionActivity(GfxRenderer& renderer, MappedInputManager& mappedInput, std::string deckName,
-                       std::string title);
+  StudySessionActivity(GfxRenderer& renderer, MappedInputManager& mappedInput, std::string deckName, std::string title);
   void onEnter() override;
   void onExit() override;
   void loop() override;
@@ -30,6 +29,8 @@ class StudySessionActivity final : public Activity {
   void renderBack(int top, int width);
   void renderMessage(int top, int width, const char* title, const std::string& body);
   std::string nextDueText() const;
+  std::string intervalText(srs::Grade grade) const;  // when the card comes back
+  void renderProgress(int y, int width);
   // Font for a card field: the study font when the text needs it, else built-in.
   int fontFor(const std::string& text, bool front) const;
 
@@ -41,6 +42,9 @@ class StudySessionActivity final : public Activity {
   size_t position = 0;
   size_t plannedCount = 0;  // size of the plan before any Again
   uint16_t reviewed = 0;
+  int dueCount = 0;    // reviews in the plan
+  int newCount = 0;    // new cards in the plan
+  int graded[3] = {};  // answers given: Again, Good, Easy
   std::vector<std::string> fields;
   // Loaded on the first card that needs them.
   std::unique_ptr<StudyFont> cjkFont;

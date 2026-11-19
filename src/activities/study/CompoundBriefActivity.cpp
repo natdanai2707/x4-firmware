@@ -36,6 +36,20 @@ void CompoundBriefActivity::onEnter() {
     brief = CompoundBrief::parse(text);
   }
   loaded = !brief.empty();
+  if (loaded) {
+    // Home marks a brief as read from this list (newest 20 names).
+    constexpr char READ_PATH[] = "/.crosspoint/compound/read.txt";
+    const std::string name = path.substr(path.find_last_of('/') + 1);
+    std::string list;
+    if (Storage.exists(READ_PATH)) Storage.readFileToString("COMPOUND", READ_PATH, 2048, list);
+    if (list.find(name + "\n") == std::string::npos) {
+      list = name + "\n" + list;
+      size_t cut = 0;
+      for (int i = 0; i < 20 && cut != std::string::npos; ++i) cut = list.find('\n', cut ? cut + 1 : 0);
+      if (cut != std::string::npos) list.resize(cut + 1);
+      Storage.writeFile(READ_PATH, String(list.c_str()));
+    }
+  }
   thaiFont = makeUniqueNoThrow<StudyFont>(renderer, StudyFont::Script::Thai);
   if (thaiFont && !thaiFont->load()) thaiFont.reset();
   layout();
