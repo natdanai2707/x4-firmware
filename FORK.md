@@ -129,7 +129,7 @@ Home shows the clock, a Today card (today's run, gym and grip, IELTS and
 Chinese cards due, today's Compound brief; struck through when done), a
 Continue reading card and app tiles (Compound, IELTS, Chinese, Training). A
 row or tile opens its app. The menu button, a swipe in from the right edge,
-or Back open the device menu: Browse Files, Library, File
+or Back open the device menu; its Sleep now button sleeps without the side button: Browse Files, Library, File
 Transfer (USB, WiFi), Settings. `src/activities/home/LauncherActivity.*`
 replaces the list home; `HomeActivity` is no longer used.
 

@@ -1007,6 +1007,12 @@ void loop() {
     return;
   }
 
+  // Sleep asked for from the screen (Home menu), same path as the power button.
+  if (activityManager.takeSleepRequest()) {
+    enterDeepSleep();
+    return;
+  }
+
   const unsigned long sleepTimeoutMs = SETTINGS.getSleepTimeoutMs();
   if (sleepTimeoutMs > 0 && millis() - lastActivityTime >= sleepTimeoutMs) {
     LOG_DBG("SLP", "Auto-sleep triggered after %lu ms of inactivity", sleepTimeoutMs);

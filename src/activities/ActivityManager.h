@@ -103,6 +103,14 @@ class ActivityManager {
   void goToPlugins(bool showOpds);
   void goToReader(std::string path, bool allowFastInitialRefresh = false);
   void goToSleep(bool fromTimeout = false);
+  // A screen asks for sleep (the Home menu's Sleep button); the main loop runs
+  // the normal sleep path on its next pass.
+  void requestSleep() { sleepRequested = true; }
+  bool takeSleepRequest() {
+    const bool r = sleepRequested;
+    sleepRequested = false;
+    return r;
+  }
   void goToBoot();
   void goToFullScreenMessage(std::string message, EpdFontFamily::Style style = EpdFontFamily::REGULAR);
   void goToCrashReport();
@@ -141,6 +149,9 @@ class ActivityManager {
   // Trigger a render and block until it completes.
   // Must NOT be called from the render task or while holding a RenderLock.
   void requestUpdateAndWait();
+
+ private:
+  bool sleepRequested = false;
 };
 
 extern ActivityManager activityManager;  // singleton, to be defined in main.cpp

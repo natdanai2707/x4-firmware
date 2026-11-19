@@ -300,6 +300,11 @@ void LauncherActivity::loop() {
     int y = 0;
     if (mappedInput.wasScreenTapped(x, y)) {
       if (x < drawerLeft()) return setDrawer(false);
+      if (sleepBox.has(x, y)) {
+        drawerOpen = false;
+        activityManager.requestSleep();
+        return;
+      }
       const int t = toolAt(x, y);
       if (t >= 0) openTool(static_cast<Tool>(t));
     }
@@ -504,6 +509,15 @@ void LauncherActivity::render(RenderLock&&) {
       dy += DRAWER_ROW;
       renderer.drawLine(left + 3, dy - 1, w - 1, dy - 1);
     }
+    // Sleep without the side button.
+    const int sbH = 56;
+    const int sbY = h - m.buttonHintsHeight - 52 - 16 - sbH;
+    sleepBox = {left + 16, sbY, w - 16, sbY + sbH};
+    renderer.drawRoundedRect(left + 16, sbY, w - left - 32, sbH, 2, 12, true);
+    const char* sl = "Sleep now";
+    renderer.drawText(UI_12_FONT_ID,
+                      left + 16 + (w - left - 32 - renderer.getTextWidth(UI_12_FONT_ID, sl, EpdFontFamily::BOLD)) / 2,
+                      sbY + (sbH - bodyH) / 2, sl, true, EpdFontFamily::BOLD);
     const std::string ver = std::string("Firmware ") + CROSSPOINT_VERSION;
     renderer.drawLine(left, h - m.buttonHintsHeight - 52, w - 1, h - m.buttonHintsHeight - 52, 2, true);
     renderer.drawText(SMALL_FONT_ID, left + 18, h - m.buttonHintsHeight - 52 + (52 - smallH) / 2, ver.c_str());

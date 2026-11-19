@@ -48,6 +48,7 @@ class LauncherActivity final : public Activity {
   std::vector<TodayRow> today;
   std::vector<Box> rowBoxes;
   Box menuBox;
+  Box sleepBox;  // Sleep button in the device menu
   Box cardBox;
   Box tileBoxes[4];
   int drawerLeft() const;
