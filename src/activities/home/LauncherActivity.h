@@ -55,7 +55,8 @@ class LauncherActivity final : public Activity {
   std::string bookTitle;
   std::string bookPath;
   std::string bookAuthor;
-  int selected = 0;  // App index; 0 is the Continue card
+  int bookPercent = -1;  // percent read of the Continue book, -1 unknown
+  int selected = 0;      // App index; 0 is the Continue card
   bool drawerOpen = false;
   int drawerSelected = 0;
 };

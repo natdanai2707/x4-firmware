@@ -28,6 +28,7 @@
 #include "fontIds.h"
 #include "study/StudyDeck.h"
 #include "study/Training.h"
+#include "util/BookProgress.h"
 
 namespace {
 constexpr int PAD = 16;
@@ -106,6 +107,7 @@ void LauncherActivity::onEnter() {
     break;
   }
   selected = bookPath.empty() ? 1 : 0;
+  bookPercent = bookPath.empty() ? -1 : loadBookProgress(bookPath);
   buildToday();
   requestUpdate();
 }
@@ -442,7 +444,7 @@ void LauncherActivity::render(RenderLock&&) {
   }
   const int tx = cx + coverW + 14;
   const int tw = w - PAD - 14 - tx;
-  int ty = y + (contH - smallH - bodyH - smallH - 4) / 2;
+  int ty = y + (contH - smallH - bodyH - smallH - (bookPercent >= 0 ? 14 : 4)) / 2;
   renderer.drawText(SMALL_FONT_ID, tx, ty, "CONTINUE READING", true, EpdFontFamily::BOLD);
   ty += smallH + 2;
   const std::string title = bookPath.empty() ? "No book open yet" : bookTitle;
@@ -450,8 +452,15 @@ void LauncherActivity::render(RenderLock&&) {
                     renderer.truncatedText(UI_12_FONT_ID, title.c_str(), tw, EpdFontFamily::BOLD).c_str(), true,
                     EpdFontFamily::BOLD);
   ty += bodyH + 2;
-  const std::string sub = bookPath.empty() ? "Open one from Library" : bookAuthor;
+  std::string sub = bookPath.empty() ? "Open one from Library" : bookAuthor;
+  if (bookPercent >= 0) sub += (sub.empty() ? "" : "  ·  ") + std::to_string(bookPercent) + "%";
   renderer.drawText(SMALL_FONT_ID, tx, ty, renderer.truncatedText(SMALL_FONT_ID, sub.c_str(), tw).c_str());
+  if (bookPercent >= 0) {
+    // Progress bar under the author.
+    const int by = ty + smallH + 4;
+    renderer.fillRoundedRect(tx, by, tw, 6, 3, Color::LightGray);
+    renderer.fillRoundedRect(tx, by, std::max(6, tw * bookPercent / 100), 6, 3, Color::Black);
+  }
   y += contH + GAP;
 
   // Apps: one row of four.

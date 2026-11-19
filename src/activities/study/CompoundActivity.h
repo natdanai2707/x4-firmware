@@ -48,8 +48,8 @@ class CompoundActivity final : public Activity {
     std::string path;  // the .cb file
     CompoundBrief data;
   };
-  enum class Tab : uint8_t { Markets, Ideas, Words };
-  static constexpr int TAB_COUNT = 3;
+  enum class Tab : uint8_t { Today, Markets, Ideas, Words };
+  static constexpr int TAB_COUNT = 4;
 
   bool readConfig();
   void loadBriefs();
@@ -68,6 +68,10 @@ class CompoundActivity final : public Activity {
   void renderFeed(int y);
   void renderWords(int y);
   void renderTabBar();
+  void loadRead();
+  bool isRead(const Brief& b) const;
+  int renderHero(int y, const Brief& b, bool focused);
+  int renderCompact(int y, const Brief& b, bool focused);
 
   std::string feedUrl;
   std::string token;
@@ -76,12 +80,11 @@ class CompoundActivity final : public Activity {
   bool syncing = false;
   bool autoSyncPending = false;
 
-  Tab tab = Tab::Markets;
+  Tab tab = Tab::Today;
   int focus = 0;              // 0 hero, 1.. earlier rows
   std::vector<int> itemTops;  // hit bands of hero and rows, from the last render
   std::vector<int> itemBottoms;
-  int statusTop = 0;
-  int statusBottom = 0;
+  std::string readList;  // names of opened briefs, from read.txt
 
   // Words tab: wrapped lines, paginated.
   struct WordLine {

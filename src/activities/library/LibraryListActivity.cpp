@@ -26,6 +26,7 @@
 #include "components/icons/search32.h"
 #include "fontIds.h"
 #include "util/BookCacheUtils.h"
+#include "util/BookProgress.h"
 
 namespace fui = freeink::ui;
 
@@ -95,6 +96,14 @@ void LibraryListActivity::onEnter() {
   // Recent is backed by the resident store. Prune before opening the index so
   // its persistence write never overlaps the long-lived index reader.
   if (RECENT_BOOKS.pruneMissing()) RECENT_BOOKS.saveToFile();
+
+  // Percent read for the books opened most recently; other rows show none.
+  readProgress.clear();
+  for (const auto& book : RECENT_BOOKS.getBooks()) {
+    if (readProgress.size() >= READ_PROGRESS_BOOKS) break;
+    const int pct = loadBookProgress(book.path);
+    if (pct >= 0) readProgress.emplace_back(book.path.substr(book.path.find_last_of('/') + 1), pct);
+  }
 
   // Rebuild when the index is missing, invalid, or was built with the other
   // metadata mode. Otherwise entering the screen stays instant.
@@ -851,6 +860,7 @@ void LibraryListActivity::buildRows(UiScreen& screen) {
   if (winTitles.size() < cap) winTitles.resize(cap);
   if (winAuthors.size() < cap) winAuthors.resize(cap);
   if (!groupsCollapsed && winHeaders.size() < cap) winHeaders.resize(cap);
+  if (winValues.size() < cap) winValues.resize(cap);
   winItems.clear();
   if (winItems.capacity() < cap) winItems.reserve(cap);
 
@@ -896,6 +906,18 @@ void LibraryListActivity::buildRows(UiScreen& screen) {
     }
 
     item.label = title.c_str();
+    // Percent read on the right; books in progress get a bold title.
+    if (!groupsCollapsed && !rowFile.empty() && !readProgress.empty()) {
+      const std::string base = rowFile.substr(rowFile.find_last_of('/') + 1);
+      for (const auto& rp : readProgress) {
+        if (rp.first != base || rp.second <= 0) continue;
+        std::string& v = winValues[static_cast<size_t>(rows)];
+        v = rp.second >= 100 ? "Done" : std::to_string(rp.second) + "%";
+        item.value = v.c_str();
+        item.bold = rp.second < 100;
+        break;
+      }
+    }
     // Group headings stay bare; every book row gets its file-type icon.
     if (!groupsCollapsed && !rowFile.empty()) item.icon = listIconFor(UITheme::getFileIcon(rowFile), 32);
     item.actionValue = static_cast<int16_t>(entry);

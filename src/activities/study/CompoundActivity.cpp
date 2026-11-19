@@ -20,6 +20,7 @@
 #include "activities/study/CompoundBriefActivity.h"
 #include "components/UITheme.h"
 #include "components/UiAppHelpers.h"
+#include "components/icons/trainIcons.h"
 #include "fontIds.h"
 #include "network/HttpDownloader.h"
 #include "study/CompoundBrief.h"
@@ -48,8 +49,11 @@ constexpr size_t MAX_BRIEF_BYTES = 64 * 1024;
 // Morning briefs are published by about 06:55 Bangkok time.
 constexpr int AUTO_SYNC_HOUR = 7;
 constexpr int GAP = 10;
-constexpr int TAB_BAR_HEIGHT = 60;
-constexpr const char* TAB_NAMES[] = {"Markets", "Ideas", "Words"};
+constexpr int TAB_BAR_HEIGHT = 64;
+constexpr const char* TAB_NAMES[] = {"Today", "Markets", "Ideas", "Words"};
+constexpr const uint8_t* TAB_ICONS[] = {TrainHomeIcon, TrainChartIcon, TrainBoltIcon, TrainDictIcon};
+constexpr char READ_PATH[] = "/.crosspoint/compound/read.txt";
+constexpr int ICON = 24;
 constexpr const char* MONTHS[] = {"Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"};
 
 std::string trim(std::string s) {
@@ -198,6 +202,7 @@ void CompoundActivity::onEnter() {
   thaiFont = makeUniqueNoThrow<StudyFont>(renderer, StudyFont::Script::Thai);
   if (thaiFont && !thaiFont->load()) thaiFont.reset();
   loadBriefs();
+  loadRead();
   layoutWords();
   autoSyncPending = shouldAutoSync();
   requestUpdate();
@@ -288,11 +293,40 @@ void CompoundActivity::loadBriefs() {
 
 std::vector<const CompoundActivity::Brief*> CompoundActivity::ofTab() const {
   std::vector<const Brief*> out;
+  if (tab == Tab::Today) {
+    // Newest markets brief, newest idea, then everything else by date.
+    const Brief* news = nullptr;
+    const Brief* idea = nullptr;
+    for (const auto& b : briefs) {
+      if (b.data.isNews() && !news) news = &b;
+      if (!b.data.isNews() && !idea) idea = &b;
+    }
+    if (news) out.push_back(news);
+    if (idea) out.push_back(idea);
+    std::vector<const Brief*> rest;
+    for (const auto& b : briefs) {
+      if (&b != news && &b != idea) rest.push_back(&b);
+    }
+    std::stable_sort(rest.begin(), rest.end(),
+                     [](const Brief* a, const Brief* b) { return a->data.date > b->data.date; });
+    out.insert(out.end(), rest.begin(), rest.end());
+    return out;
+  }
   const bool news = tab == Tab::Markets;
   for (const auto& b : briefs) {
     if (b.data.isNews() == news) out.push_back(&b);
   }
   return out;
+}
+
+void CompoundActivity::loadRead() {
+  readList.clear();
+  if (Storage.exists(READ_PATH)) Storage.readFileToString("COMPOUND", READ_PATH, 2048, readList);
+}
+
+bool CompoundActivity::isRead(const Brief& b) const {
+  const std::string name = b.path.substr(b.path.find_last_of('/') + 1);
+  return readList.find(name + "\n") != std::string::npos;
 }
 
 int CompoundActivity::contentTop() const {
@@ -322,7 +356,10 @@ void CompoundActivity::openBrief(const Brief* b) {
     LOG_ERR("COMPOUND", "OOM: brief screen");
     return;
   }
-  startActivityForResult(std::move(screen), [this](const ActivityResult&) { requestUpdate(); });
+  startActivityForResult(std::move(screen), [this](const ActivityResult&) {
+    loadRead();
+    requestUpdate();
+  });
 }
 
 // Words tab, like the phone app: every term from the briefs on the device.
@@ -363,6 +400,7 @@ void CompoundActivity::layoutWords() {
   // First page starts below the title block.
   const int firstTop =
       contentTop() + renderer.getLineHeight(NOTOSANS_18_FONT_ID) + renderer.getLineHeight(SMALL_FONT_ID) + GAP;
+  // Words keeps its title; the other tabs start right under the header.
   const int bottom = tabBarTop() - GAP;
   int y = firstTop;
   wordPages.push_back(0);
@@ -430,7 +468,10 @@ void CompoundActivity::loop() {
     const int t = x * TAB_COUNT / std::max(1, renderer.getScreenWidth());
     return setTab(static_cast<Tab>(std::min(t, TAB_COUNT - 1)));
   }
-  if (y >= statusTop && y < statusBottom) return startSync();
+  {
+    const auto& m = UITheme::getInstance().getMetrics();
+    if (y < m.topPadding + m.headerHeight && x > renderer.getScreenWidth() / 2) return startSync();
+  }
   if (tab == Tab::Words) {
     const int pages = static_cast<int>(wordPages.size());
     const int next = x >= renderer.getScreenWidth() / 2 ? std::min(pages - 1, wordPage + 1) : std::max(0, wordPage - 1);
@@ -454,36 +495,127 @@ void CompoundActivity::render(RenderLock&&) {
   const auto& m = UITheme::getInstance().getMetrics();
   const int w = renderer.getScreenWidth();
   const int pad = m.contentSidePadding;
-
-  std::string today;
-  const time_t now = time(nullptr);
-  if (now > 1577836800) {
-    struct tm t{};
-    localtime_r(&now, &t);
-    static constexpr const char* DAYS[] = {"Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"};
-    today = std::string(DAYS[t.tm_wday]) + " " + std::to_string(t.tm_mday) + " " + MONTHS[t.tm_mon];
-  }
-  GUI.drawHeader(renderer, Rect{0, m.topPadding, w, m.headerHeight}, "COMPOUND.",
-                 today.empty() ? nullptr : today.c_str());
-
-  // Section title with the sync status on the right (tap it to sync).
-  int y = contentTop();
-  renderer.drawText(NOTOSANS_18_FONT_ID, pad, y, TAB_NAMES[static_cast<int>(tab)], true, EpdFontFamily::BOLD);
+  // Sync status on the right of the header; tap it to sync.
   const std::string status = syncing ? "Syncing..." : syncStatus;
-  const int sw = renderer.getTextWidth(SMALL_FONT_ID, status.c_str());
-  const int sy = y + renderer.getLineHeight(NOTOSANS_18_FONT_ID) - renderer.getLineHeight(SMALL_FONT_ID) - 4;
-  renderer.drawText(SMALL_FONT_ID, w - pad - sw, sy, status.c_str());
-  statusTop = y;
-  statusBottom = y + renderer.getLineHeight(NOTOSANS_18_FONT_ID);
-  y += renderer.getLineHeight(NOTOSANS_18_FONT_ID);
+  GUI.drawHeader(renderer, Rect{0, m.topPadding, w, m.headerHeight}, "COMPOUND.", status.c_str());
 
+  int y = contentTop();
   if (tab == Tab::Words) {
+    renderer.drawText(NOTOSANS_18_FONT_ID, pad, y, TAB_NAMES[static_cast<int>(tab)], true, EpdFontFamily::BOLD);
+    y += renderer.getLineHeight(NOTOSANS_18_FONT_ID);
     renderWords(y);
   } else {
-    renderFeed(y + GAP);
+    renderFeed(y);
   }
   renderTabBar();
   renderer.displayBuffer();
+}
+
+namespace {
+// A small black label, as the phone app marks new briefs.
+int drawNewTag(const GfxRenderer& r, int x, int y) {
+  const int h = r.getLineHeight(SMALL_FONT_ID) + 4;
+  const int w = r.getTextWidth(SMALL_FONT_ID, "NEW", EpdFontFamily::BOLD) + 12;
+  r.fillRoundedRect(x, y, w, h, 6, Color::Black);
+  r.drawText(SMALL_FONT_ID, x + 6, y + 2, "NEW", false, EpdFontFamily::BOLD);
+  return w;
+}
+}  // namespace
+
+// The latest brief as a big card: tag, title, Thai title, market grid or hook,
+// and a Read button. Returns the card's bottom.
+int CompoundActivity::renderHero(int y, const Brief& item, const bool focused) {
+  const auto& m = UITheme::getInstance().getMetrics();
+  const int w = renderer.getScreenWidth();
+  const int pad = m.contentSidePadding;
+  const int width = w - 2 * pad;
+  constexpr int IN = 16;
+  const auto& hero = item.data;
+  const bool news = hero.isNews();
+  const int heroTop = y;
+  const int inner = width - 2 * IN;
+  const int x = pad + IN;
+  y += IN;
+  int mx = x;
+  if (!isRead(item)) mx += drawNewTag(renderer, x, y - 2) + 8;
+  const std::string meta = std::string(news ? "Markets" : "Idea") + "  ·  " + shortDate(hero.date) + "  ·  5 min";
+  renderer.drawText(SMALL_FONT_ID, mx, y, meta.c_str(), true, EpdFontFamily::BOLD);
+  y += renderer.getLineHeight(SMALL_FONT_ID) + 8;
+  for (const auto& l : renderer.wrappedText(NOTOSANS_16_FONT_ID, hero.title.c_str(), inner, 3, EpdFontFamily::BOLD)) {
+    renderer.drawText(NOTOSANS_16_FONT_ID, x, y, l.c_str(), true, EpdFontFamily::BOLD);
+    y += renderer.getLineHeight(NOTOSANS_16_FONT_ID);
+  }
+  if (thaiFont && !hero.titleTh.empty()) {
+    const int th = thaiFont->bodyFontId();
+    for (const auto& l : renderer.wrappedText(th, hero.titleTh.c_str(), inner, 1)) {
+      renderer.drawText(th, x, y + 2, l.c_str());
+      y += renderer.getLineHeight(th) + 2;
+    }
+  }
+  y += GAP;
+  if (news && !hero.metrics.empty()) {
+    // 3 x 2 grid of market chips: label, then change.
+    const int cols = 3;
+    const int cellW = inner / cols;
+    const int cellH = renderer.getLineHeight(SMALL_FONT_ID) + renderer.getLineHeight(UI_12_FONT_ID) + 12;
+    const int n = std::min<int>(6, hero.metrics.size());
+    const int rows = (n + cols - 1) / cols;
+    renderer.drawRoundedRect(x, y, cellW * cols, cellH * rows, 1, 8, true);
+    for (int i = 0; i < n; ++i) {
+      const int cx = x + (i % cols) * cellW;
+      const int cy = y + (i / cols) * cellH;
+      if (i % cols) renderer.drawLine(cx, cy, cx, cy + cellH - 1);
+      if (i >= cols && i % cols == 0) renderer.drawLine(x, cy, x + cellW * cols - 1, cy);
+      const auto& mt = hero.metrics[i];
+      renderer.drawText(SMALL_FONT_ID, cx + 10, cy + 5, mt.label.c_str());
+      const std::string v = mt.change.empty() ? mt.value : mt.change;
+      renderer.drawText(UI_12_FONT_ID, cx + 10, cy + 5 + renderer.getLineHeight(SMALL_FONT_ID), v.c_str(), true,
+                        EpdFontFamily::BOLD);
+    }
+    y += cellH * rows + GAP;
+  } else if (!hero.hook.empty()) {
+    for (const auto& l : renderer.wrappedText(UI_12_FONT_ID, hero.hook.c_str(), inner, 3, EpdFontFamily::ITALIC)) {
+      renderer.drawText(UI_12_FONT_ID, x, y, l.c_str(), true, EpdFontFamily::ITALIC);
+      y += renderer.getLineHeight(UI_12_FONT_ID);
+    }
+    y += GAP;
+  }
+  const int btnH = 48;
+  renderer.fillRoundedRect(x, y, inner, btnH, 10, Color::Black);
+  const char* label = "Read brief";
+  const int tw = renderer.getTextWidth(UI_12_FONT_ID, label, EpdFontFamily::BOLD);
+  renderer.drawText(UI_12_FONT_ID, x + (inner - tw) / 2, y + (btnH - renderer.getLineHeight(UI_12_FONT_ID)) / 2, label,
+                    false, EpdFontFamily::BOLD);
+  y += btnH + IN;
+  renderer.drawRoundedRect(pad, heroTop, width, y - heroTop, focused ? 3 : 2, 14, true);
+  return y;
+}
+
+// A second brief as a short card: tag, meta and title. Returns its bottom.
+int CompoundActivity::renderCompact(int y, const Brief& item, const bool focused) {
+  const auto& m = UITheme::getInstance().getMetrics();
+  const int w = renderer.getScreenWidth();
+  const int pad = m.contentSidePadding;
+  const int width = w - 2 * pad;
+  constexpr int IN = 14;
+  const int top = y;
+  const int inner = width - 2 * IN - ICON - 8;
+  const int x = pad + IN;
+  y += IN;
+  int mx = x;
+  if (!isRead(item)) mx += drawNewTag(renderer, x, y - 2) + 8;
+  const std::string meta =
+      std::string(item.data.isNews() ? "Markets" : "Idea") + "  ·  " + shortDate(item.data.date) + "  ·  6 min";
+  renderer.drawText(SMALL_FONT_ID, mx, y, meta.c_str(), true, EpdFontFamily::BOLD);
+  y += renderer.getLineHeight(SMALL_FONT_ID) + 6;
+  for (const auto& l : renderer.wrappedText(UI_12_FONT_ID, item.data.title.c_str(), inner, 2, EpdFontFamily::BOLD)) {
+    renderer.drawText(UI_12_FONT_ID, x, y, l.c_str(), true, EpdFontFamily::BOLD);
+    y += renderer.getLineHeight(UI_12_FONT_ID);
+  }
+  y += IN;
+  renderer.drawIcon(TrainChevRIcon, pad + width - IN - ICON, top + (y - top - ICON) / 2, ICON);
+  renderer.drawRoundedRect(pad, top, width, y - top, focused ? 3 : 2, 14, true);
+  return y;
 }
 
 void CompoundActivity::renderFeed(int y) {
@@ -495,105 +627,60 @@ void CompoundActivity::renderFeed(int y) {
   const auto items = ofTab();
   itemTops.clear();
   itemBottoms.clear();
-  const bool news = tab == Tab::Markets;
 
   if (items.empty()) {
-    renderer.drawLine(pad, y, w - pad, y, 2, true);
-    y += GAP * 2;
-    renderer.drawText(UI_12_FONT_ID, pad, y, news ? "No market brief yet" : "No idea brief yet", true,
+    const bool news = tab != Tab::Ideas;
+    renderer.drawText(UI_12_FONT_ID, pad, y + GAP, news ? "No brief yet" : "No idea brief yet", true,
                       EpdFontFamily::BOLD);
-    y += renderer.getLineHeight(UI_12_FONT_ID);
-    renderer.drawText(UI_12_FONT_ID, pad, y,
-                      news ? "A new brief arrives every morning. Tap Sync." : "A new idea arrives every morning.");
+    renderer.drawText(UI_12_FONT_ID, pad, y + GAP + renderer.getLineHeight(UI_12_FONT_ID),
+                      "A new brief arrives every morning. Tap the sync status above.");
     return;
   }
-
-  // Hero: the latest brief as a card. Everything inside keeps the same inset.
-  constexpr int IN = 16;
-  const auto& hero = items[0]->data;
-  const int heroTop = y;
-  const int inner = width - 2 * IN;
-  const int x = pad + IN;
-  y += IN;
-  const std::string meta = std::string(news ? "MARKETS" : "IDEAS") + "  ·  " + longDate(hero.date) + "  ·  5 min read";
-  renderer.drawText(SMALL_FONT_ID, x, y, meta.c_str(), true, EpdFontFamily::BOLD);
-  y += renderer.getLineHeight(SMALL_FONT_ID) + 6;
-  for (const auto& l : renderer.wrappedText(NOTOSANS_16_FONT_ID, hero.title.c_str(), inner, 3, EpdFontFamily::BOLD)) {
-    renderer.drawText(NOTOSANS_16_FONT_ID, x, y, l.c_str(), true, EpdFontFamily::BOLD);
-    y += renderer.getLineHeight(NOTOSANS_16_FONT_ID);
-  }
-  y += GAP;
-  if (news && !hero.metrics.empty()) {
-    // 3 x 2 grid of market chips: label, then change.
-    const int cols = 3;
-    const int cellW = inner / cols;
-    const int cellH = renderer.getLineHeight(SMALL_FONT_ID) + renderer.getLineHeight(UI_12_FONT_ID) + 14;
-    const int n = std::min<int>(6, hero.metrics.size());
-    const int rows = (n + cols - 1) / cols;
-    renderer.drawRect(x, y, cellW * cols, cellH * rows);
-    for (int i = 0; i < n; ++i) {
-      const int cx = x + (i % cols) * cellW;
-      const int cy = y + (i / cols) * cellH;
-      if (i % cols) renderer.drawLine(cx, cy, cx, cy + cellH - 1);
-      if (i >= cols && i % cols == 0) renderer.drawLine(x, cy, x + cellW * cols - 1, cy);
-      const auto& mt = hero.metrics[i];
-      renderer.drawText(SMALL_FONT_ID, cx + 10, cy + 6, mt.label.c_str());
-      const std::string v = mt.change.empty() ? mt.value : mt.change;
-      renderer.drawText(UI_12_FONT_ID, cx + 10, cy + 6 + renderer.getLineHeight(SMALL_FONT_ID), v.c_str(), true,
-                        EpdFontFamily::BOLD);
-    }
-    y += cellH * rows + GAP + 4;
-  } else if (!hero.hook.empty()) {
-    for (const auto& l : renderer.wrappedText(UI_12_FONT_ID, hero.hook.c_str(), inner, 3, EpdFontFamily::ITALIC)) {
-      renderer.drawText(UI_12_FONT_ID, x, y, l.c_str(), true, EpdFontFamily::ITALIC);
-      y += renderer.getLineHeight(UI_12_FONT_ID);
-    }
-    y += GAP + 4;
-  }
-  // Read button: filled, like the phone's primary action.
-  const int btnH = 44;
-  const int btnW = 120;
-  renderer.fillRoundedRect(x, y, btnW, btnH, 6, Color::Black);
-  const int tw = renderer.getTextWidth(UI_12_FONT_ID, "Read", EpdFontFamily::BOLD);
-  renderer.drawText(UI_12_FONT_ID, x + (btnW - tw) / 2, y + (btnH - renderer.getLineHeight(UI_12_FONT_ID)) / 2, "Read",
-                    false, EpdFontFamily::BOLD);
-  y += btnH + IN;
-  renderer.drawRoundedRect(pad, heroTop, width, y - heroTop, focus == 0 ? 3 : 1, 12, true);
-  itemTops.push_back(heroTop);
+  size_t next = 0;
+  itemTops.push_back(y);
+  y = renderHero(y, *items[0], focus == 0);
   itemBottoms.push_back(y);
-  y += GAP + 8;
-
-  if (items.size() < 2) return;
+  next = 1;
+  // Today also shows the newest idea as a short card.
+  if (tab == Tab::Today && items.size() > 1 && items[1]->data.isNews() != items[0]->data.isNews()) {
+    y += GAP;
+    itemTops.push_back(y);
+    y = renderCompact(y, *items[1], focus == 1);
+    itemBottoms.push_back(y);
+    next = 2;
+  }
+  y += GAP + 6;
+  if (items.size() <= next) return;
   renderer.drawText(SMALL_FONT_ID, pad, y, "EARLIER", true, EpdFontFamily::BOLD);
-  y += renderer.getLineHeight(SMALL_FONT_ID) + 2;
+  y += renderer.getLineHeight(SMALL_FONT_ID) + 4;
   renderer.drawLine(pad, y, w - pad, y);
-  for (size_t i = 1; i < items.size(); ++i) {
+  for (size_t i = next; i < items.size(); ++i) {
     const auto& b = items[i]->data;
     const int top = y;
-    const int dateW = 52;
-    const int titleW = width - dateW - 12;
-    const auto lines = renderer.wrappedText(UI_12_FONT_ID, b.title.c_str(), titleW, 1);
-    const int rowH = std::max<int>(
-        66, lines.size() * renderer.getLineHeight(UI_12_FONT_ID) + renderer.getLineHeight(SMALL_FONT_ID) + 16);
+    const int dateW = 44;
+    const int titleW = width - dateW - 12 - ICON - 6;
+    const std::string title = renderer.truncatedText(UI_12_FONT_ID, b.title.c_str(), titleW, EpdFontFamily::BOLD);
+    const int rowH = renderer.getLineHeight(UI_12_FONT_ID) + renderer.getLineHeight(SMALL_FONT_ID) + 18;
     if (top + rowH > bottom) break;
     // Date block: day number over month.
     const std::string day = b.date.size() >= 10 ? std::to_string(std::atoi(b.date.substr(8, 2).c_str())) : "";
     const std::string mon =
         b.date.size() >= 10 ? MONTHS[std::max(0, std::min(11, std::atoi(b.date.substr(5, 2).c_str()) - 1))] : "";
+    const int dh = renderer.getLineHeight(NOTOSANS_16_FONT_ID) + renderer.getLineHeight(SMALL_FONT_ID) - 6;
+    const int dy = top + (rowH - dh) / 2;
     const int dw = renderer.getTextWidth(NOTOSANS_16_FONT_ID, day.c_str(), EpdFontFamily::BOLD);
-    renderer.drawText(NOTOSANS_16_FONT_ID, pad + (dateW - dw) / 2, top + 4, day.c_str(), true, EpdFontFamily::BOLD);
-    const int mw = renderer.getTextWidth(SMALL_FONT_ID, mon.c_str());
-    renderer.drawText(SMALL_FONT_ID, pad + (dateW - mw) / 2, top + renderer.getLineHeight(NOTOSANS_16_FONT_ID) - 3,
-                      mon.c_str());
-    int ty = top + 10;
-    for (const auto& l : lines) {
-      renderer.drawText(UI_12_FONT_ID, pad + dateW + 12, ty, l.c_str());
-      ty += renderer.getLineHeight(UI_12_FONT_ID);
-    }
-    renderer.drawText(SMALL_FONT_ID, pad + dateW + 12, ty, news ? "Market brief" : "Idea");
+    renderer.drawText(NOTOSANS_16_FONT_ID, pad + (dateW - dw) / 2, dy, day.c_str(), true, EpdFontFamily::BOLD);
+    const int mw = renderer.getTextWidth(SMALL_FONT_ID, mon.c_str(), EpdFontFamily::BOLD);
+    renderer.drawText(SMALL_FONT_ID, pad + (dateW - mw) / 2, dy + renderer.getLineHeight(NOTOSANS_16_FONT_ID) - 6,
+                      mon.c_str(), true, EpdFontFamily::BOLD);
+    const int ty = top + (rowH - renderer.getLineHeight(UI_12_FONT_ID) - renderer.getLineHeight(SMALL_FONT_ID)) / 2;
+    renderer.drawText(UI_12_FONT_ID, pad + dateW + 12, ty, title.c_str(), true, EpdFontFamily::BOLD);
+    std::string sub = b.isNews() ? "Markets" : "Idea";
+    if (!isRead(*items[i])) sub += "  ·  New";
+    renderer.drawText(SMALL_FONT_ID, pad + dateW + 12, ty + renderer.getLineHeight(UI_12_FONT_ID), sub.c_str());
+    renderer.drawIcon(TrainChevRIcon, w - pad - ICON, top + (rowH - ICON) / 2, ICON);
     y = top + rowH;
     renderer.drawLine(pad, y, w - pad, y);
-    // Focus: a bar on the left edge keeps the row text clear of any outline.
     if (focus == static_cast<int>(i)) renderer.fillRect(pad - 10, top + 8, 4, rowH - 16, true);
     itemTops.push_back(top);
     itemBottoms.push_back(y);
@@ -637,16 +724,18 @@ void CompoundActivity::renderWords(int y) {
 void CompoundActivity::renderTabBar() {
   const int w = renderer.getScreenWidth();
   const int top = tabBarTop();
-  renderer.drawLine(0, top, w - 1, top);
+  const int smallH = renderer.getLineHeight(SMALL_FONT_ID);
+  renderer.drawLine(0, top, w - 1, top, 2, true);
   for (int i = 0; i < TAB_COUNT; ++i) {
     const int x0 = i * w / TAB_COUNT;
     const int x1 = (i + 1) * w / TAB_COUNT;
     const bool sel = i == static_cast<int>(tab);
-    if (sel) renderer.fillRect(x0 + (x1 - x0) / 4, top, (x1 - x0) / 2, 4, true);
+    if (sel) renderer.fillRect(x0 + 16, top, x1 - x0 - 32, 4, true);
+    const int iy = top + (TAB_BAR_HEIGHT - ICON - smallH - 2) / 2;
+    renderer.drawIcon(TAB_ICONS[i], x0 + (x1 - x0 - ICON) / 2, iy, ICON);
     const auto style = sel ? EpdFontFamily::BOLD : EpdFontFamily::REGULAR;
-    const int tw = renderer.getTextWidth(UI_12_FONT_ID, TAB_NAMES[i], style);
-    renderer.drawText(UI_12_FONT_ID, x0 + (x1 - x0 - tw) / 2,
-                      top + (TAB_BAR_HEIGHT - renderer.getLineHeight(UI_12_FONT_ID)) / 2, TAB_NAMES[i], true, style);
+    const int tw = renderer.getTextWidth(SMALL_FONT_ID, TAB_NAMES[i], style);
+    renderer.drawText(SMALL_FONT_ID, x0 + (x1 - x0 - tw) / 2, iy + ICON + 2, TAB_NAMES[i], true, style);
   }
 }
 

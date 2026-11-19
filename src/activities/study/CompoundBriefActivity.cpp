@@ -9,6 +9,7 @@
 #include <algorithm>
 
 #include "components/UITheme.h"
+#include "components/icons/trainIcons.h"
 #include "fontIds.h"
 
 namespace {
@@ -75,10 +76,12 @@ int CompoundBriefActivity::bodyTop() const {
   return m.topPadding + m.headerHeight + GAP;
 }
 
-int CompoundBriefActivity::bodyBottom() const {
+int CompoundBriefActivity::footTop() const {
   const auto& m = UITheme::getInstance().getMetrics();
-  return renderer.getScreenHeight() - m.buttonHintsHeight - GAP;
+  return renderer.getScreenHeight() - m.buttonHintsHeight - FOOT_H;
 }
+
+int CompoundBriefActivity::bodyBottom() const { return footTop() - GAP; }
 
 void CompoundBriefActivity::addText(const std::string& text, const int latinFont, const uint8_t style, const int indent,
                                     const int gapBefore, const bool rule, const bool bar) {
@@ -110,8 +113,6 @@ void CompoundBriefActivity::layout() {
           B);
   addText(brief.title, NOTOSANS_18_FONT_ID, B, 0, 4);
   if (showThai) addText(brief.titleTh, UI_12_FONT_ID, R, 0, 4);
-  // Like the app's "Show Thai translation" button; tap or Confirm toggles it.
-  lines.push_back({Kind::ThaiToggle, UI_12_FONT_ID, B, 0, GAP, false, false, 44, 0, {}});
 
   if (news && !brief.metrics.empty()) {
     // Snapshot grid, two per row: label, value and change, note.
@@ -142,7 +143,8 @@ void CompoundBriefActivity::layout() {
     addText(s.en, UI_12_FONT_ID, R, 0, 6);
     if (showThai) addText(s.th, UI_12_FONT_ID, R, 16, 6, false, true);
     if (!s.impact.empty()) {
-      addText("Why it matters here: " + s.impact, UI_12_FONT_ID, I, 16, GAP, false, true);
+      addText("WHY IT MATTERS", SMALL_FONT_ID, B, 16, GAP, false, true);
+      addText(s.impact, UI_12_FONT_ID, B, 16, 2, false, true);
       if (showThai) addText(s.impactTh, UI_12_FONT_ID, R, 16, 4, false, true);
     }
   }
@@ -226,7 +228,8 @@ void CompoundBriefActivity::loop() {
   int x = 0;
   int y = 0;
   if (mappedInput.wasScreenTapped(x, y)) {
-    if (toggleTop >= 0 && y >= toggleTop && y < toggleBottom) {
+    const auto& m = UITheme::getInstance().getMetrics();
+    if (y < m.topPadding + m.headerHeight && x > renderer.getScreenWidth() * 2 / 3) {
       {
         RenderLock lock;
         showThai = !showThai;
@@ -234,6 +237,14 @@ void CompoundBriefActivity::loop() {
       }
       requestUpdate();
       return;
+    }
+    if (y >= footTop()) {
+      // Footer: the arrows at each end, or a spot on the progress bar.
+      const int w = renderer.getScreenWidth();
+      if (x < 60) return setPage(page - 1);
+      if (x > w - 60) return setPage(page + 1);
+      const int count = static_cast<int>(pageStarts.size());
+      return setPage(std::min(count - 1, std::max(0, (x - 60) * count / std::max(1, w - 120))));
     }
     setPage(x >= renderer.getScreenWidth() / 2 ? page + 1 : page - 1);
   }
@@ -245,10 +256,41 @@ void CompoundBriefActivity::render(RenderLock&&) {
   const int w = renderer.getScreenWidth();
   const int pad = m.contentSidePadding;
 
-  std::string pages;
-  if (loaded) pages = std::to_string(page + 1) + " / " + std::to_string(pageStarts.size());
-  const char* title = loaded ? (brief.isNews() ? "Markets" : "Ideas") : "Compound";
-  GUI.drawHeader(renderer, Rect{0, m.topPadding, w, m.headerHeight}, title, pages.empty() ? nullptr : pages.c_str());
+  const char* title = loaded ? (brief.isNews() ? "Markets" : "Idea") : "Compound";
+  GUI.drawHeader(renderer, Rect{0, m.topPadding, w, m.headerHeight}, title, nullptr);
+  if (loaded) {
+    // Thai on or off, top right: filled when on.
+    const char* th = "Thai";
+    const int bw = renderer.getTextWidth(UI_12_FONT_ID, th, EpdFontFamily::BOLD) + 28;
+    const int bh = 40;
+    const int bx = w - pad - bw;
+    const int by = m.topPadding + (m.headerHeight - bh) / 2 + 6;
+    if (showThai) {
+      renderer.fillRoundedRect(bx, by, bw, bh, 10, Color::Black);
+    } else {
+      renderer.fillRect(bx, by, bw, bh, false);
+      renderer.drawRoundedRect(bx, by, bw, bh, 2, 10, true);
+    }
+    renderer.drawText(UI_12_FONT_ID, bx + 14, by + (bh - renderer.getLineHeight(UI_12_FONT_ID)) / 2, th, !showThai,
+                      EpdFontFamily::BOLD);
+
+    // Footer: previous, progress, page count, next.
+    const int ft = footTop();
+    const int icon = 24;
+    renderer.drawLine(0, ft, w - 1, ft, 2, true);
+    renderer.drawIcon(TrainChevLIcon, pad - 4, ft + (FOOT_H - icon) / 2, icon);
+    renderer.drawIcon(TrainChevRIcon, w - pad - icon + 4, ft + (FOOT_H - icon) / 2, icon);
+    const int count = std::max<int>(1, pageStarts.size());
+    const std::string pg = std::to_string(page + 1) + " / " + std::to_string(count);
+    const int pw = renderer.getTextWidth(SMALL_FONT_ID, pg.c_str(), EpdFontFamily::BOLD);
+    const int barX = pad + icon + 12;
+    const int barW = w - 2 * pad - 2 * icon - 24 - pw - 12;
+    const int barY = ft + FOOT_H / 2 - 3;
+    renderer.fillRoundedRect(barX, barY, barW, 6, 3, Color::LightGray);
+    renderer.fillRoundedRect(barX, barY, std::max(6, barW * (page + 1) / count), 6, 3, Color::Black);
+    renderer.drawText(SMALL_FONT_ID, barX + barW + 12, ft + (FOOT_H - renderer.getLineHeight(SMALL_FONT_ID)) / 2,
+                      pg.c_str(), true, EpdFontFamily::BOLD);
+  }
 
   if (!loaded) {
     renderer.drawText(UI_12_FONT_ID, pad, bodyTop(), "This brief could not be opened.", true, EpdFontFamily::BOLD);
@@ -257,22 +299,10 @@ void CompoundBriefActivity::render(RenderLock&&) {
     const size_t from = pageStarts.empty() ? 0 : pageStarts[page];
     const size_t to = page + 1 < static_cast<int>(pageStarts.size()) ? pageStarts[page + 1] : lines.size();
     int y = bodyTop();
-    toggleTop = toggleBottom = -1;
     const int cellW = (w - 2 * pad) / METRIC_COLS;
     for (size_t i = from; i < to; ++i) {
       const auto& l = lines[i];
       if (i != from) y += l.gapBefore;
-      if (l.kind == Kind::ThaiToggle) {
-        const char* label = showThai ? "Hide Thai translation" : "Show Thai translation";
-        const int bw = renderer.getTextWidth(UI_12_FONT_ID, label, EpdFontFamily::BOLD) + 28;
-        renderer.drawRoundedRect(pad, y, bw, l.height, 1, 4, true);
-        renderer.drawText(UI_12_FONT_ID, pad + 14, y + (l.height - renderer.getLineHeight(UI_12_FONT_ID)) / 2, label,
-                          true, EpdFontFamily::BOLD);
-        toggleTop = y;
-        toggleBottom = y + l.height;
-        y += l.height;
-        continue;
-      }
       if (l.kind == Kind::Metrics) {
         // One row of the snapshot grid.
         for (int c = 0; c < METRIC_COLS; ++c) {

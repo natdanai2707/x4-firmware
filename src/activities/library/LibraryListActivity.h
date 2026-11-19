@@ -178,6 +178,11 @@ class LibraryListActivity final : public UiTabListActivity {
   std::vector<std::string> winTitles;
   std::vector<std::string> winAuthors;
   std::vector<std::string> winHeaders;
+  std::vector<std::string> winValues;  // "42%" or "Done" per visible row
+  // Reading progress of the recently opened books, by file name. Loaded once
+  // on enter (at most READ_PROGRESS_BOOKS books) so rows never open a book.
+  static constexpr size_t READ_PROGRESS_BOOKS = 6;
+  std::vector<std::pair<std::string, int>> readProgress;
 
   // Pinned overlay state: per store entry its RecentAsc row (0xFFFF when the
   // book is not in the index), and the current-direction rows to skip, sorted

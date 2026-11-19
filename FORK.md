@@ -135,8 +135,11 @@ replaces the list home; `HomeActivity` is no longer used.
 
 ## Compound
 
-The Compound app reads briefs natively with tabs: Markets, News, Words for the
-morning news, and Idea, Words for case studies. Left/Right switch tabs,
+The Compound app reads briefs natively with tabs: Today (newest markets brief
+and idea, then the rest), Markets, Ideas and Words. Unread briefs carry a NEW
+label (opened briefs are listed in `read.txt`). In a brief, the Thai button in
+the header shows or hides Thai, and the footer has the arrows, a progress bar
+and the page count. Left/Right switch tabs,
 Up/Down and Next turn pages, taps on the tab bar or the screen halves work too.
 
 Sync downloads `index.txt` and the plain text `.cb` briefs into the hidden
@@ -211,3 +214,9 @@ Notion writes it rejects as invalid go to `/.crosspoint/training/rejected.tsv`.
 Every sleep mode shows a text-only quote (Eliud Kipchoge on discipline),
 white on black, drawn by `SleepActivity::renderQuoteSleepScreen()`. Sleep
 images on the card are no longer used.
+
+## Library
+
+Rows of the books opened most recently show the percent read on the right,
+with a bold title while the book is in progress. Home's Continue reading card
+shows the same percent with a bar.
