@@ -493,7 +493,6 @@ void LauncherActivity::render(RenderLock&&) {
     renderer.fillRect(left, dTop, w - left, h - dTop, false);
     renderer.fillRect(left, dTop, 3, h - dTop, true);
     renderer.drawText(NOTOSANS_18_FONT_ID, left + 18, dTop + (60 - bigH) / 2, "Menu", true, EpdFontFamily::BOLD);
-    renderer.drawIcon(TrainChevRIcon, w - 14 - SMALL_ICON, dTop + (60 - SMALL_ICON) / 2, SMALL_ICON);
     renderer.drawLine(left, dTop + 60, w - 1, dTop + 60, 2, true);
     int dy = dTop + 64;
     for (int i = 0; i < TOOL_COUNT; ++i) {
