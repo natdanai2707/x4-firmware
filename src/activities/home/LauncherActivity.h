@@ -18,9 +18,10 @@ class LauncherActivity final : public Activity {
   bool isHomeActivity() const override { return true; }
 
  private:
-  enum class App : uint8_t { Continue, Compound, Vocab, Chinese, Training };
+  enum class App : uint8_t { Continue, Compound, Vocab, Chinese };
   enum class Tool : uint8_t { Files, Library, Transfer, Settings };
-  static constexpr int APP_COUNT = 5;  // Continue card + 4 tiles
+  static constexpr int TILE_COUNT = 3;
+  static constexpr int APP_COUNT = TILE_COUNT + 1;  // Continue card + tiles
   static constexpr int TOOL_COUNT = 4;
 
   void openApp(App app);
@@ -50,7 +51,7 @@ class LauncherActivity final : public Activity {
   Box menuBox;
   Box sleepBox;  // Sleep button in the device menu
   Box cardBox;
-  Box tileBoxes[4];
+  Box tileBoxes[TILE_COUNT];
   int drawerLeft() const;
 
   std::string bookTitle;

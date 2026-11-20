@@ -14,7 +14,6 @@
 #include "activities/ActivityManager.h"
 #include "activities/study/CompoundActivity.h"
 #include "activities/study/StudySessionActivity.h"
-#include "activities/study/TrainingActivity.h"
 #include "components/UITheme.h"
 #include "components/icons/blocks.h"
 #include "components/icons/bookmark.h"
@@ -27,7 +26,6 @@
 #include "components/icons/transfer.h"
 #include "fontIds.h"
 #include "study/StudyDeck.h"
-#include "study/Training.h"
 #include "util/BookProgress.h"
 
 namespace {
@@ -35,7 +33,8 @@ constexpr int PAD = 16;
 constexpr int GAP = 12;
 constexpr int ICON = 32;  // drawer icons
 constexpr int SMALL_ICON = 24;
-constexpr int TILE_ICON = 64;  // 8-bit app icons
+constexpr int TILE_ICON = 64;  // 8-bit app icons: 16x16 pixel art stored at 4x
+constexpr int TILE_ICON_MAX_H = 280;
 constexpr int EDGE = 40;       // right-edge band that starts the drawer swipe
 constexpr int DRAWER_ROW = 68;
 constexpr int ROW_H = 52;  // Today card lines
@@ -52,7 +51,6 @@ constexpr Tile TILES[] = {
     {"Compound", "Daily brief", PixelCompoundIcon},
     {"IELTS", "Vocab", PixelVocabIcon},
     {"Chinese", "Hanzi", PixelChineseIcon},
-    {"Training", "Plan", PixelTrainIcon},
 };
 constexpr Tile TOOLS[] = {
     {"Browse files", nullptr, FolderIcon},
@@ -83,11 +81,36 @@ void drawCentered(const GfxRenderer& r, int font, int x, int y, int w, int h, co
   r.drawText(font, x + (w - tw) / 2, y + (h - r.getLineHeight(font)) / 2, text, black, style);
 }
 
+// Draws a 64px pixel-art icon at `px` pixels per art pixel (4 = native size).
+// Samples one bit per 4x4 block, with the same orientation as drawIcon.
+void drawPixelIcon(const GfxRenderer& r, const uint8_t* bitmap, const int x, const int y, const int px) {
+  constexpr int ART = TILE_ICON / 4;
+  constexpr int ROW_BYTES = TILE_ICON / 8;
+  for (int row = 0; row < ART; ++row) {
+    for (int col = 0; col < ART; ++col) {
+      const int bitCol = col * 4;
+      const uint8_t byte = bitmap[row * 4 * ROW_BYTES + (bitCol >> 3)];
+      if (((byte >> (7 - (bitCol & 7))) & 1) == 0) r.fillRect(x + (ART - 1 - row) * px, y + col * px, px, px);
+    }
+  }
+}
+
 std::string studyText(const StudyDeck::Summary& s) {
   if (s.reviews == 0 && s.fresh == 0) return "All done for today";
   std::string t = std::to_string(s.reviews) + " review" + (s.reviews == 1 ? "" : "s");
   if (s.fresh > 0) t += ", " + std::to_string(s.fresh) + " new";
   return t;
+}
+
+// Local date as YYYY-MM-DD, or "" while the clock is unset.
+std::string todayIso() {
+  const time_t now = time(nullptr);
+  if (now < 1577836800) return "";
+  struct tm t{};
+  localtime_r(&now, &t);
+  char buf[11];
+  strftime(buf, sizeof(buf), "%Y-%m-%d", &t);
+  return buf;
 }
 
 std::string minutes(const int cards) { return "~" + std::to_string(std::max(1, (cards * 25 + 59) / 60)) + " min"; }
@@ -114,44 +137,7 @@ void LauncherActivity::onEnter() {
 
 void LauncherActivity::buildToday() {
   today.clear();
-  const std::string iso = training::today();
-  // Training: the day's run, gym and grip, like the Training calendar.
-  if (!iso.empty()) {
-    std::vector<training::Session> sessions;
-    training::loadSessions(sessions);
-    const int wd = training::weekday(iso);
-    bool gymDone = false;
-    bool gripDone = false;
-    for (const auto& ss : sessions) {
-      if (ss.date != iso) continue;
-      if (ss.isRun()) {
-        std::string t = ss.title;
-        const size_t colon = t.find(": ");
-        if (!t.empty() && t[0] == 'W' && colon != std::string::npos && colon < 12) t = t.substr(colon + 2);
-        today.push_back(
-            {App::Training, TrainRunIcon, "RUN", t, ss.targetPace.empty() ? "" : ss.targetPace + " /km", ss.done()});
-      } else if (ss.type == "Grip") {
-        gripDone = gripDone || ss.done();
-      } else if (ss.type == "Upper A" || ss.type == "Upper B" || ss.type == "Arms" || ss.type == "Strength") {
-        gymDone = gymDone || ss.done();
-      }
-    }
-    // Today's gym, as Training schedules it from Notion.
-    if (const auto* d = training::gymDayOn(iso, sessions)) {
-      int sets = 0;
-      for (int k = 0; k < d->count; ++k) sets += d->ex[k].sets;
-      today.push_back({App::Training, TrainGymIcon, "GYM", d->label, std::to_string(sets) + " sets", gymDone});
-    }
-    if (const auto* g = training::gripDay(wd)) {
-      std::string names;
-      int sets = 0;
-      for (int k = 0; k < g->count; ++k) {
-        names += (k ? ", " : "") + std::string(g->ex[k].name);
-        sets += g->ex[k].sets;
-      }
-      today.push_back({App::Training, TrainGripIcon, "GRIP", names, std::to_string(sets) + " sets", gripDone});
-    }
-  }
+  const std::string iso = todayIso();
   // Study decks.
   StudyDeck::Summary sum;
   if (StudyDeck::summary("vocab", sum)) {
@@ -199,7 +185,7 @@ int LauncherActivity::drawerLeft() const { return renderer.getScreenWidth() / 4;
 
 int LauncherActivity::tileAt(const int x, const int y) const {
   if (cardBox.has(x, y)) return 0;
-  for (int i = 0; i < 4; ++i) {
+  for (int i = 0; i < TILE_COUNT; ++i) {
     if (tileBoxes[i].has(x, y)) return i + 1;
   }
   return -1;
@@ -228,9 +214,6 @@ void LauncherActivity::openApp(const App app) {
     case App::Continue:
       if (!bookPath.empty()) activityManager.goToReader(bookPath);
       return;
-    case App::Training:
-      screen = makeUniqueNoThrow<TrainingActivity>(renderer, mappedInput);
-      break;
     case App::Compound:
       screen = makeUniqueNoThrow<CompoundActivity>(renderer, mappedInput);
       break;
@@ -471,20 +454,24 @@ void LauncherActivity::render(RenderLock&&) {
   }
   y += contH + GAP;
 
-  // Apps: one row of four.
+  // Apps: one row of tiles that fills the space left under the cards.
   const int tgap = 10;
-  const int tileW = (width - 3 * tgap) / 4;
-  const int tileH = std::max(110, std::min(150, h - m.buttonHintsHeight - GAP - y));
-  for (int i = 0; i < 4; ++i) {
+  const int tileW = (width - (TILE_COUNT - 1) * tgap) / TILE_COUNT;
+  const int tileH = std::max(110, std::min(TILE_ICON_MAX_H, h - m.buttonHintsHeight - GAP - y));
+  // Largest whole pixel size that fits the tile, so the art stays crisp.
+  const int tileTextH = renderer.getLineHeight(UI_10_FONT_ID);
+  const int labelH = 10 + tileTextH + smallH;
+  const int px = std::max(4, std::min({6, (tileW - 32) / 16, (tileH - labelH - 24) / 16}));
+  const int iconSize = px * 16;
+  for (int i = 0; i < TILE_COUNT; ++i) {
     const int x = PAD + i * (tileW + tgap);
     const bool sel = selected == i + 1;
     renderer.drawRoundedRect(x, y, tileW, tileH, sel ? 3 : 2, 14, true);
-    const int blockH = TILE_ICON + 6 + bodyH + smallH;
-    int iy = y + (tileH - blockH) / 2;
-    renderer.drawIcon(TILES[i].icon, x + (tileW - TILE_ICON) / 2, iy, TILE_ICON);
-    iy += TILE_ICON + 6;
-    drawCentered(renderer, SMALL_FONT_ID, x, iy, tileW, bodyH, TILES[i].label, true, EpdFontFamily::BOLD);
-    drawCentered(renderer, SMALL_FONT_ID, x, iy + bodyH, tileW, smallH, TILES[i].hint, true);
+    int iy = y + (tileH - iconSize - labelH) / 2;
+    drawPixelIcon(renderer, TILES[i].icon, x + (tileW - iconSize) / 2, iy, px);
+    iy += iconSize + 10;
+    drawCentered(renderer, UI_10_FONT_ID, x, iy, tileW, tileTextH, TILES[i].label, true, EpdFontFamily::BOLD);
+    drawCentered(renderer, SMALL_FONT_ID, x, iy + tileTextH, tileW, smallH, TILES[i].hint, true);
     tileBoxes[i] = {x, y, x + tileW, y + tileH};
   }
 

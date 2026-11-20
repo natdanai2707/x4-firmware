@@ -125,9 +125,9 @@ works for English books, and it lets the menus and Compound briefs show Thai.
 
 ## Home
 
-Home shows the clock, a Today card (today's run, gym and grip, IELTS and
-Chinese cards due, today's Compound brief; struck through when done), a
-Continue reading card and app tiles (Compound, IELTS, Chinese, Training). A
+Home shows the clock, a Today card (IELTS and Chinese cards due, today's
+Compound brief; struck through when done), a Continue reading card and app
+tiles (Compound, IELTS, Chinese). A
 row or tile opens its app. The menu button, a swipe in from the right edge,
 or Back open the device menu; its Sleep now button sleeps without the side button: Browse Files, Library, File
 Transfer (USB, WiFi), Settings. `src/activities/home/LauncherActivity.*`
@@ -160,54 +160,9 @@ Publishing: the Compound scheduled tasks run `tools/publish.sh` in
 brief; it writes an EPUB and a `.cb` file per brief. `tools/compound/compound_epub.py`
 here is a copy of the feed repo's builder. The feed keeps the newest 30 briefs.
 
-## Training
-
-The Training app (`src/activities/study/TrainingActivity.*`,
-`TrainingLogActivity.*`, `src/study/Training.*`) is the device version of the
-Training Hub phone app. Both use the Notion "Sessions" database of
-"10k Plan: Block 1", so phone and device stay in step.
-
-- The app opens on the Calendar: the week with what each day holds (runs and
-  Hyrox from Notion, the gym and grip plan), ticked when logged. Tap a day for
-  its cards (Log run, Start gym, Start grip). It never turns WiFi on; the
-  header's sync status syncs on tap, and Run syncs on open when the plan is
-  old or logs are waiting.
-- Run: the week's runs with done and planned km, and weekly mileage. Tap a
-  run to log status, distance, pace, average HR, RPE and a note.
-- Gym: the phone app's PPL. Upper A (Mon), Arms (Wed, 7 exercises with the
-  wrist curl), Upper B (Fri, cable rope hammer curl), Legs (Sat), with the
-  same order, RIR, cues and push/pull supersets. A session goes one exercise
-  at a time (steps along the top). After a set the next step is the superset
-  partner. Each exercise has its own rest timer: it keeps running when you
-  move to another exercise, a dot and m:ss mark it in the steps, and an
-  exercise not resting shows "Ready".
-- Schedule: a Notion gym row (Upper A, Upper B, Arms, Strength) on a day
-  sets that day's program. The weekday plan (from 18 Nov to the end of the
-  block) applies only when that program has no row elsewhere in the same
-  week, planned, done or skipped.
-- Save (Gym or Hyrox): an open row of the same type in this week is updated
-  and moved to today. A new row is made only when there is none. Replan is
-  done from the phone.
-- Grip: the grip work of each weekday, saved the same way.
-- Hyrox: Mini Hyrox 45 min (6 rounds) or 60 min (8 rounds), a 5 min run before
-  each station. Tick a station when done. No timer.
-- The Run week shows plan sessions only; gym, grip and Hyrox logs stay off it,
-  like the phone app.
-
-Logs go into `/.crosspoint/training/outbox.tsv` first and are sent on the next
-sync, so a workout without WiFi is not lost. Sync sends the outbox, then pulls
-the sessions from last week to two weeks ahead. It runs when Run opens and the last
-sync is more than an hour old or logs are waiting, and after each save, when a
-WiFi network is saved. Loads and ticked sets are kept on the card.
-
-Setup: create a Notion integration, connect it to the "10k Plan: Block 1" page
-and save its key as `notion.txt` on the card root (just the key, or
-`token=<key>`). It moves to `/.crosspoint/training/notion.txt` on first use.
-Notion writes it rejects as invalid go to `/.crosspoint/training/rejected.tsv`.
-
 ## Local changes vs upstream
 
-- `src/study/`, `src/activities/study/`: Study hub, SRS scheduler, deck store, study fonts, session screen, Compound sync, Training app and Notion sync.
+- `src/study/`, `src/activities/study/`: Study hub, SRS scheduler, deck store, study fonts, session screen, Compound sync.
 - `lib/Utf8/Utf8.h`, `lib/EpdFont/`, `lib/GfxRenderer/GfxRenderer.cpp`: Thai marks.
 - `lib/Epub/Epub/ThaiSegmenter.*`, `ThaiDictionaryStore.*`, `ParsedText.cpp`, `Section.cpp` (cache v74): Thai line breaking.
 - `src/activities/home/LauncherActivity.*`, `ActivityManager.cpp`: app-style Home with a right-edge device menu.
