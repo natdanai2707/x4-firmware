@@ -138,9 +138,9 @@ constexpr bool isDescenderBase(const uint32_t cp) { return cp == 0x0E0E || cp ==
 constexpr int NO_STACK = -32768;
 
 struct Box {
-  int left;    ///< x from the glyph's cursor to its bitmap's left edge
+  int left;  ///< x from the glyph's cursor to its bitmap's left edge
   int width;
-  int top;     ///< y from the baseline up to the bitmap's top edge
+  int top;  ///< y from the baseline up to the bitmap's top edge
   int height;
 };
 

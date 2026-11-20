@@ -44,7 +44,7 @@ TEST(SrsScheduler, NewCardAgainStaysDueTodayThenOneDay) {
 
 TEST(SrsScheduler, GoodGrowsByEase) {
   CardState s = srs::review(CardState{}, Grade::Good, TODAY);  // 1 day
-  s = srs::review(s, Grade::Good, s.due);                       // round(1 x 2.5) = 3
+  s = srs::review(s, Grade::Good, s.due);                      // round(1 x 2.5) = 3
   EXPECT_EQ(s.interval, 3);
   s = srs::review(s, Grade::Good, s.due);  // round(3*2.5)=8
   EXPECT_EQ(s.interval, 8);

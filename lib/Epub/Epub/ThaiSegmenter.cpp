@@ -19,7 +19,8 @@ bool isFollowingVowel(const uint32_t cp) {
 }
 
 bool isAlnum(const uint32_t cp) {
-  return (cp >= '0' && cp <= '9') || (cp >= 'A' && cp <= 'Z') || (cp >= 'a' && cp <= 'z') || (cp >= 0xC0 && cp < 0x0E00);
+  return (cp >= '0' && cp <= '9') || (cp >= 'A' && cp <= 'Z') || (cp >= 'a' && cp <= 'z') ||
+         (cp >= 0xC0 && cp < 0x0E00);
 }
 
 struct Cost {

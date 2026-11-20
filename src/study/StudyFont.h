@@ -1,7 +1,7 @@
 #pragma once
 
-#include <VectorFontSupport.h>
 #include <HalStorage.h>
+#include <VectorFontSupport.h>
 
 #include <memory>
 #include <string>
@@ -46,7 +46,7 @@ class StudyFont {
 #if CROSSPOINT_VECTOR_FONTS
   std::unique_ptr<TtfEpdFont> front;
   std::unique_ptr<TtfEpdFont> body;
-  HalFile file;           // kept open: glyphs are read from SD on demand
+  HalFile file;  // kept open: glyphs are read from SD on demand
   unsigned long size = 0;
 #endif
 };

@@ -97,8 +97,8 @@ Day dayFromDate(const int year, const int month, const int dayOfMonth) {
   const int y = year - (month <= 2 ? 1 : 0);
   const int era = (y >= 0 ? y : y - 399) / 400;
   const unsigned yoe = static_cast<unsigned>(y - era * 400);
-  const unsigned doy = (153u * static_cast<unsigned>(month + (month > 2 ? -3 : 9)) + 2u) / 5u +
-                       static_cast<unsigned>(dayOfMonth) - 1u;
+  const unsigned doy =
+      (153u * static_cast<unsigned>(month + (month > 2 ? -3 : 9)) + 2u) / 5u + static_cast<unsigned>(dayOfMonth) - 1u;
   const unsigned doe = yoe * 365u + yoe / 4u - yoe / 100u + doy;
   const long days = static_cast<long>(era) * 146097L + static_cast<long>(doe) - 719468L;
   if (days < 0) return 0;

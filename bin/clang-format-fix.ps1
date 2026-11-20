@@ -96,6 +96,7 @@ $exclude = @(
     'lib\EpdFont\builtinFonts'
     'lib\Epub\Epub\hyphenation\generated'
     'lib\uzlib'
+    'tools\crosspoint-simulator'
     '.pio'
     '.venv'
 )

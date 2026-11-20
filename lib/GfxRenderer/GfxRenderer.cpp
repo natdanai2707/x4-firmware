@@ -724,7 +724,7 @@ void GfxRenderer::drawText(const int fontId, const int x, const int y, const cha
   int lastBaseHeight = 0;
   uint32_t lastBaseCp = 0;
   int thaiStackTop = thaiMark::NO_STACK;  // top of the highest Thai mark on the current base
-  int32_t prevAdvanceFP = 0;  // 12.4 fixed-point: prev glyph's advance + next kern for snap
+  int32_t prevAdvanceFP = 0;              // 12.4 fixed-point: prev glyph's advance + next kern for snap
 
   if (fontCacheManager_ && fontCacheManager_->isScanning()) {
     fontCacheManager_->recordText(renderedText, resolvedFontId, style);
@@ -777,9 +777,9 @@ void GfxRenderer::drawText(const int fontId, const int x, const int y, const cha
         const thaiMark::Box base{lastBaseLeft, lastBaseWidth, lastBaseTop, lastBaseHeight};
         const thaiMark::Box mark{combiningGlyph->left, combiningGlyph->width, combiningGlyph->top,
                                  combiningGlyph->height};
-        const auto placed = thaiMark::place(thaiKind, lastBaseCp, lastBaseX, base,
-                                            lastBaseX + fp4::toPixel(prevAdvanceFP), mark, stackTop,
-                                            combiningMark::MIN_GAP_PX);
+        const auto placed =
+            thaiMark::place(thaiKind, lastBaseCp, lastBaseX, base, lastBaseX + fp4::toPixel(prevAdvanceFP), mark,
+                            stackTop, combiningMark::MIN_GAP_PX);
         renderCharImpl<TextRotation::None>(*this, renderMode, font, cp, placed.x, yPos - placed.raise, black, style);
         if (thaiKind != thaiMark::Kind::Below) {
           thaiStackTop = std::max(thaiStackTop, combiningGlyph->top + placed.raise);

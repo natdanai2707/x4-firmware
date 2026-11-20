@@ -35,7 +35,7 @@ jobs:
           git diff --exit-code || (echo "Please run 'bin/clang-format-fix' to fix formatting issues" && exit 1)
 
   cppcheck:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04  # libpcre3 is not in newer Ubuntu releases
     steps:
       - uses: actions/checkout@v6
         with:

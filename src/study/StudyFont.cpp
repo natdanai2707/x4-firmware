@@ -4,6 +4,9 @@
 #include <Logging.h>
 #include <Memory.h>
 
+#include <algorithm>
+#include <iterator>
+
 #if CROSSPOINT_VECTOR_FONTS
 #include <SdCardFontRegistry.h>
 #include <TtfEpdFont.h>
@@ -49,15 +52,12 @@ bool StudyFont::needsFont(const std::string& text) {
 bool StudyFont::load() {
 #if CROSSPOINT_VECTOR_FONTS
   if (available()) return true;
-  const char* path = nullptr;
   const bool thai = script == Script::Thai;
-  for (const char* candidate : thai ? THAI_PATHS : CJK_PATHS) {
-    if (Storage.exists(candidate)) {
-      path = candidate;
-      break;
-    }
-  }
-  if (!path) return false;
+  const auto& paths = thai ? THAI_PATHS : CJK_PATHS;
+  const auto found =
+      std::find_if(std::begin(paths), std::end(paths), [](const char* candidate) { return Storage.exists(candidate); });
+  if (found == std::end(paths)) return false;
+  const char* path = *found;
 
   file = Storage.open(path);
   if (!file || file.size() == 0) {

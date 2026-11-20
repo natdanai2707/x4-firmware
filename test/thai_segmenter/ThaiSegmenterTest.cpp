@@ -42,9 +42,7 @@ TEST_F(ThaiSegmenterDict, SplitsSentenceIntoWords) {
   EXPECT_EQ(segmented("เศรษฐกิจโลกชะลอตัว", &dict), "เศรษฐกิจ|โลก|ชะลอตัว");
 }
 
-TEST_F(ThaiSegmenterDict, PrefersLongerKnownWords) {
-  EXPECT_EQ(segmented("ความรู้รอบตัว", &dict).find("ความรู้"), 0u);
-}
+TEST_F(ThaiSegmenterDict, PrefersLongerKnownWords) { EXPECT_EQ(segmented("ความรู้รอบตัว", &dict).find("ความรู้"), 0u); }
 
 TEST_F(ThaiSegmenterDict, UnknownTextBreaksOnlyAtClusters) {
   for (const size_t cut : ThaiSegmenter::breakByteOffsets("เกฺงฺ", &dict)) {

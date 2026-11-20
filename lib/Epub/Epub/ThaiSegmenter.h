@@ -65,12 +65,18 @@ void Dictionary::forEachPrefix(const uint8_t* text, const size_t n, F&& onMatch)
     uint32_t a = lo, b = hi;
     while (a < b) {
       const uint32_t mid = a + (b - a) / 2;
-      if (key(mid) < c) a = mid + 1; else b = mid;
+      if (key(mid) < c)
+        a = mid + 1;
+      else
+        b = mid;
     }
     uint32_t e = a, f = hi;
     while (e < f) {
       const uint32_t mid = e + (f - e) / 2;
-      if (key(mid) <= c) e = mid + 1; else f = mid;
+      if (key(mid) <= c)
+        e = mid + 1;
+      else
+        f = mid;
     }
     lo = a;
     hi = e;

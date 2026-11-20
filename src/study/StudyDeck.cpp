@@ -175,22 +175,20 @@ bool StudyDeck::summary(const std::string& name, Summary& out) {
   size_t cards = 0;
   char buf[512];
   bool lineStart = true;
-  bool counted = false;
   while (true) {
     const int n = file.read(buf, sizeof(buf));
     if (n <= 0) break;
     for (int i = 0; i < n; ++i) {
       const char c = buf[i];
       if (lineStart) {
-        counted = c != '\n' && c != '\r' && c != '#';
-        if (counted) ++cards;
+        if (c != '\n' && c != '\r' && c != '#') ++cards;
         lineStart = false;
       }
       if (c == '\n') lineStart = true;
     }
   }
   file.close();
-  const srs::Day today = StudyDeck::today();
+  const srs::Day day = StudyDeck::today();
   size_t stored = 0;
   uint16_t newToday = 0;
   int learnedNew = 0;
@@ -199,7 +197,7 @@ bool StudyDeck::summary(const std::string& name, Summary& out) {
     if (file.read(&header, sizeof(header)) == static_cast<int>(sizeof(header)) &&
         std::memcmp(header.magic, MAGIC, sizeof(MAGIC)) == 0 && header.version == VERSION) {
       stored = std::min<size_t>(header.cardCount, cards);
-      newToday = header.newDay == today ? header.newToday : 0;
+      newToday = header.newDay == day ? header.newToday : 0;
       srs::CardState st[32];
       size_t left = stored;
       while (left > 0) {
@@ -209,7 +207,7 @@ bool StudyDeck::summary(const std::string& name, Summary& out) {
         for (size_t k = 0; k < take; ++k) {
           if (srs::isNew(st[k])) {
             ++learnedNew;
-          } else if (today > 0 && st[k].due <= today) {
+          } else if (day > 0 && st[k].due <= day) {
             ++out.reviews;
           }
         }
