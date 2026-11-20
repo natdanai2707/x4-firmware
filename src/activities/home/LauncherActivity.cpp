@@ -365,8 +365,8 @@ void LauncherActivity::render(RenderLock&&) {
   // Today: what each app wants from you today.
   rowBoxes.clear();
   if (!today.empty()) {
-    int doneCount = 0;
-    for (const auto& r : today) doneCount += r.done ? 1 : 0;
+    const int doneCount =
+        static_cast<int>(std::count_if(today.begin(), today.end(), [](const TodayRow& r) { return r.done; }));
     const int headH = bodyH + 16;
     const int cardH = headH + static_cast<int>(today.size()) * ROW_H + 6;
     renderer.drawRoundedRect(PAD, y, width, cardH, 2, 16, true);

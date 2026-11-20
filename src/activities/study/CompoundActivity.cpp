@@ -278,14 +278,14 @@ void CompoundActivity::loadBriefs() {
     std::string last;
     if (Storage.exists(LAST_SYNC_PATH)) Storage.readFileToString("COMPOUND", LAST_SYNC_PATH, 64, last);
     last = trim(last);
-    static constexpr const char* MONTHS[] = {"Jan", "Feb", "Mar", "Apr", "May", "Jun",
-                                             "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"};
     const int month = last.size() >= 10 ? std::atoi(last.substr(5, 2).c_str()) : 0;
     if (last.empty() || month < 1 || month > 12) {
       syncStatus = "Tap to sync";
     } else if (last == localDate(nullptr)) {
       syncStatus = "Synced today";
     } else {
+      static constexpr const char* MONTHS[] = {"Jan", "Feb", "Mar", "Apr", "May", "Jun",
+                                               "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"};
       syncStatus = "Synced " + std::to_string(std::atoi(last.substr(8, 2).c_str())) + " " + MONTHS[month - 1];
     }
   }
@@ -872,7 +872,9 @@ int CompoundActivity::addWordsToVocab(const std::vector<std::string>& briefPaths
   for (const auto& path : briefPaths) {
     std::string text;
     if (!Storage.readFileToString("COMPOUND", path, MAX_BRIEF_BYTES, text)) continue;
-    for (const auto& t : CompoundBrief::parse(text).terms) {
+    // Keep the parsed brief alive: a range-for over a member of a temporary dangles.
+    const auto brief = CompoundBrief::parse(text);
+    for (const auto& t : brief.terms) {
       std::string key = trim(t.en);
       std::transform(key.begin(), key.end(), key.begin(), [](unsigned char c) { return std::tolower(c); });
       if (key.empty() || !known.insert(key).second) continue;

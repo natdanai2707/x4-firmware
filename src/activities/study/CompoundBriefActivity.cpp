@@ -33,7 +33,7 @@ CompoundBriefActivity::CompoundBriefActivity(GfxRenderer& renderer, MappedInputM
 void CompoundBriefActivity::onEnter() {
   Activity::onEnter();
   std::string text;
-  if (Storage.exists(path.c_str()) && Storage.readFileToString("COMPOUND", path.c_str(), MAX_BRIEF_BYTES, text)) {
+  if (Storage.exists(path.c_str()) && Storage.readFileToString("COMPOUND", path, MAX_BRIEF_BYTES, text)) {
     brief = CompoundBrief::parse(text);
   }
   loaded = !brief.empty();
@@ -134,7 +134,7 @@ void CompoundBriefActivity::layout() {
 
   for (const auto& s : brief.sections) {
     if (!s.framework.empty()) {
-      addText(s.framework.c_str(), SMALL_FONT_ID, B, 0, GAP * 3, true);
+      addText(s.framework, SMALL_FONT_ID, B, 0, GAP * 3, true);
       addText(s.headline, UI_12_FONT_ID, B, 0, 4);
     } else {
       addText(s.headline, UI_12_FONT_ID, B, 0, GAP * 3, true);

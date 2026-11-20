@@ -6,6 +6,7 @@
 #include <Memory.h>
 
 #include <algorithm>
+#include <numeric>
 
 #include "components/UITheme.h"
 #include "fontIds.h"
@@ -35,7 +36,9 @@ void StudySessionActivity::onEnter() {
   today = StudyDeck::today();
   if (today == 0) {
     // No clock yet: keep scheduling relative to the last study day.
-    for (const auto& s : deck->states()) today = std::max(today, s.due);
+    const auto& states = deck->states();
+    today = std::accumulate(states.begin(), states.end(), today,
+                            [](const srs::Day day, const srs::CardState& s) { return std::max(day, s.due); });
     if (today == 0) today = 1;
     LOG_INF("STUDY", "Clock not set, using day %u", static_cast<unsigned>(today));
   }
